@@ -5,12 +5,37 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <string_view>
 #include <vector>
 
 namespace util {
 
-// Thanks to the DXVK project for this util class. I'm a little bit confused why
-// there is no optimal (size/functions) package in vcpkg for sha1.
+template <typename T>
+auto envContains(std::string_view env, std::map<std::string_view, T> matches,
+                 T &setOnMatch) -> bool {
+  std::string_view value = std::getenv(env.data());
+
+  if (matches.contains(value)) {
+    setOnMatch = matches[value];
+    return true;
+  }
+  return false;
+}
+
+inline auto envContainsTrue(std::string_view env, bool &setOnMatch) -> void {
+  std::string_view view = std::getenv(env.data());
+  setOnMatch = view.contains("1") || view.contains("true") ||
+               view.contains("True") || view.contains("TRUE");
+}
+
+inline auto envContainsString(std::string_view env, std::string &str) -> bool {
+  str = std::getenv(env.data());
+  return !str.empty();
+}
+
+// Thanks to the DXVK project for this util class. I'm a little bit confused
+// why there is no optimal (size/functions) package in vcpkg for sha1.
 // https://github.com/doitsujin/dxvk
 
 class Sha1Hash {

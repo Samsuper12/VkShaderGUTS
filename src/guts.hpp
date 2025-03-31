@@ -1,45 +1,27 @@
 #pragma once
 #include "defines.hpp"
+#include "glslangShaders.hpp"
 #include "util.hpp"
+#include <functional>
 #include <map>
+#include <string_view>
 
 namespace impl {
 class ShaderGuts {
 public:
   ShaderGuts() : dumpEnable(false), loadEnable(false) {
+    namespace fs = std::filesystem;
 
-    if (auto value = std::getenv("VK_SHADER_GUTS_MSG_SEVERITY")) {
-      // TODO: later.
-    }
+    bool dump = util::envContainsString("VK_SHADER_GUTS_DUMP_PATH", dumpPath);
+    bool load = util::envContainsString("VK_SHADER_GUTS_LOAD_PATH", loadPath);
+    bool hash = util::envContainsString("VK_SHADER_GUTS_LOAD_HASH", loadHash);
 
-    if (auto value = std::getenv("VK_SHADER_GUTS_DUMP_PATH"); value) {
-      dumpPath = value;
-      dumpEnable = true;
-      if (!std::filesystem::exists(value)) {
-        if (!std::filesystem::create_directory(value))
-          dumpEnable = false;
-      }
+    dumpEnable =
+        dump && fs::exists(dumpPath) ? true : fs::create_directory(dumpPath);
 
-      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_DUMP_PATH = "
-                << dumpPath << "\n";
-      std::clog << "[VK_SHADER_GUTS][log]: Shader dump enabled\n";
-    }
+    loadEnable = load && hash && fs::exists(loadPath);
 
-    if (auto shaderLoadPath = std::getenv("VK_SHADER_GUTS_LOAD_PATH")) {
-      if (auto shaderLoadhash = std::getenv("VK_SHADER_GUTS_LOAD_HASH");
-          shaderLoadhash && std::filesystem::exists(shaderLoadPath)) {
-        loadPath = shaderLoadPath;
-        loadHash = shaderLoadhash;
-        loadEnable = true;
-
-        std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_PATH = "
-                  << shaderLoadPath << "\n";
-        std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_HASH = "
-                  << shaderLoadhash << "\n";
-      }
-      if (loadEnable)
-        std::clog << "[VK_SHADER_GUTS][log]: Shader load enabled\n";
-    }
+    PrintLogs();
   }
 
   auto CreateShaderModulePre(const VkShaderModuleCreateInfo *pCreateInfo)
@@ -192,6 +174,21 @@ protected:
       std::filesystem::create_directory(dumpPath + folder);
 
     util::SaveSPVToFile<T>(shader, {dumpPath + folder + hash + ".spv"});
+  }
+
+  auto PrintLogs() -> void {
+
+    if (dumpEnable) {
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_DUMP_PATH = "
+                << dumpPath << "\n";
+    }
+
+    if (loadEnable) {
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_PATH = "
+                << loadPath << "\n";
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_HASH = "
+                << loadHash << "\n";
+    }
   }
 
 private:
