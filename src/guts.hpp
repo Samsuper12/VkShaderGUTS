@@ -2,24 +2,27 @@
 #include "defines.hpp"
 #include "glslangShaders.hpp"
 #include "util.hpp"
-#include <functional>
-#include <map>
-#include <string_view>
 
 namespace impl {
 class ShaderGuts {
 public:
-  ShaderGuts() : dumpEnable(false), loadEnable(false) {
+  enum class LoadSourceType { spirv, glsl };
+
+  ShaderGuts()
+      : dumpEnable(false), loadEnable(false), loadType(LoadSourceType::spirv) {
     namespace fs = std::filesystem;
 
     bool dump = util::envContainsString("VK_SHADER_GUTS_DUMP_PATH", dumpPath);
     bool load = util::envContainsString("VK_SHADER_GUTS_LOAD_PATH", loadPath);
     bool hash = util::envContainsString("VK_SHADER_GUTS_LOAD_HASH", loadHash);
+    util::envContains<LoadSourceType>("VK_SHADER_GUTS_LOAD_TYPE",
+                                      stringToSourceType, loadType);
 
-    dumpEnable =
-        dump && fs::exists(dumpPath) ? true : fs::create_directory(dumpPath);
+    if (dump)
+      dumpEnable = fs::exists(dumpPath) ? true : fs::create_directory(dumpPath);
 
-    loadEnable = load && hash && fs::exists(loadPath);
+    if (load && hash)
+      loadEnable = hash && fs::exists(loadPath);
 
     PrintLogs();
   }
@@ -146,7 +149,30 @@ protected:
       return;
 
     auto shaderInfo = const_cast<CreateInfo *>(info);
-    currentShader = util::LoadSPVtoVector(loadPath);
+    switch (loadType) {
+    case LoadSourceType::spirv:
+      currentShader = util::LoadSPRV(loadPath);
+      break;
+
+    case LoadSourceType::glsl:
+      auto glslShader = util::LoadFile(loadPath);
+      auto glslType = util::shaders::findShaderType(loadPath);
+      auto glslVersion = util::shaders::findGLSLVersion(glslShader);
+
+      if (!glslType) {
+        std::cerr << glslType.error();
+        return;
+      }
+      if (!glslVersion) {
+        std::cerr << glslVersion.error();
+        return;
+      }
+
+      currentShader = util::shaders::compileGLSL(
+          {glslShader, glslVersion.value(), glslType.value()});
+
+      break;
+    }
 
     shaderInfo->pCode = reinterpret_cast<T *>(currentShader.data());
     shaderInfo->codeSize = currentShader.size();
@@ -189,6 +215,11 @@ protected:
       std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_HASH = "
                 << loadHash << "\n";
     }
+
+    // FIXME:
+    if (loadType != LoadSourceType::spirv) {
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_TYPE = glsl \n";
+    }
   }
 
 private:
@@ -197,6 +228,8 @@ private:
   std::string dumpPath;
   std::string loadPath;
   std::string loadHash;
+
+  LoadSourceType loadType;
 
   // Keep the shader until it loads up into the driver.
   std::vector<std::byte> currentShader;
@@ -210,6 +243,8 @@ private:
       {VK_SHADER_STAGE_FRAGMENT_BIT, "FS"},
       {VK_SHADER_STAGE_COMPUTE_BIT, "CS"},
   };
+  std::map<std::string_view, LoadSourceType> stringToSourceType{
+      {"spirv", LoadSourceType::spirv}, {"glsl", LoadSourceType::glsl}};
 };
 
 }; // namespace impl

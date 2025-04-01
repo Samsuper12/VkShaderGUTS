@@ -5,33 +5,45 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
+#include <optional>
 #include <string_view>
 #include <vector>
 
 namespace util {
 
-template <typename T>
-auto envContains(std::string_view env, std::map<std::string_view, T> matches,
-                 T &setOnMatch) -> bool {
-  std::string_view value = std::getenv(env.data());
+inline auto getEnv(std::string_view env) -> std::optional<std::string> {
+  if (auto value = std::getenv(env.data()))
+    return std::string(value);
+  return std::nullopt;
+}
 
-  if (matches.contains(value)) {
-    setOnMatch = matches[value];
+template <typename T>
+auto envContains(std::string_view var, std::map<std::string_view, T> matches,
+                 T &setOnMatch) -> bool {
+  auto env = util::getEnv(var);
+
+  if (env && matches.contains(env.value())) {
+    setOnMatch = matches[env.value()];
     return true;
   }
   return false;
 }
 
-inline auto envContainsTrue(std::string_view env, bool &setOnMatch) -> void {
-  std::string_view view = std::getenv(env.data());
-  setOnMatch = view.contains("1") || view.contains("true") ||
-               view.contains("True") || view.contains("TRUE");
+inline auto envContainsTrue(std::string_view var, bool &setOnMatch) -> void {
+  auto env = util::getEnv(var);
+
+  setOnMatch =
+      env && (env.value().contains("1") || env.value().contains("true") ||
+              env.value().contains("True") || env.value().contains("TRUE"));
 }
 
-inline auto envContainsString(std::string_view env, std::string &str) -> bool {
-  str = std::getenv(env.data());
-  return !str.empty();
+inline auto envContainsString(std::string_view var, std::string &str) -> bool {
+  auto env = util::getEnv(var);
+  if (env)
+    str = env.value();
+  return env != std::nullopt;
 }
 
 // Thanks to the DXVK project for this util class. I'm a little bit confused
@@ -90,8 +102,21 @@ inline void SaveSPVToFile(const std::vector<T> &code,
   }
 }
 
-inline auto LoadSPVtoVector(std::filesystem::path path)
-    -> std::vector<std::byte> {
+inline auto LoadFile(std::filesystem::path path) -> std::string {
+  if (path.empty() || !std::filesystem::exists(path)) {
+    std::cerr << "[VK_SHADER_GUTS][err]: Can't find file: " << path << "\n";
+    return {};
+  }
+
+  if (std::ifstream file(path, std::ios::binary); file.is_open()) {
+    return std::string(std::istreambuf_iterator<char>(file),
+                       std::istreambuf_iterator<char>());
+  }
+
+  return {};
+}
+
+inline auto LoadSPRV(std::filesystem::path path) -> std::vector<std::byte> {
   if (path.empty() || !std::filesystem::exists(path)) {
     std::clog << "[VK_SHADER_GUTS][err]: Can't find shader to load: " << path
               << "\n";

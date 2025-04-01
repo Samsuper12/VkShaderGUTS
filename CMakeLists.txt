@@ -7,7 +7,8 @@ project(VulkanShaderGuts
 include(GNUInstallDirs)
 
 find_package(VulkanHeaders CONFIG)
-find_package(Vulkan CONFIG)
+find_package(Vulkan CONFIG COMPONENTS glslang glslangValidator glslc)
+find_package(glslang CONFIG)
 
 set(LAYER_JSON "VkLayer_shader_guts")
 
@@ -34,6 +35,11 @@ PUBLIC
 target_link_libraries(${CMAKE_PROJECT_NAME}
 PRIVATE
     Vulkan::Headers
+	glslang::glslang
+	glslang::glslang-default-resource-limits
+	glslang::SPIRV
+	glslang::SPVRemapper
+
 )
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES

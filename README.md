@@ -16,6 +16,7 @@ A Vulkan layer for dumping and loading shaders.
 * `VK_SHADER_GUTS_DUMP_PATH=/some/dump/dir` - Sets the directory for dumping shaders.
 * `VK_SHADER_GUTS_LOAD_PATH=/some/load/shader.spv` - Specifies the shader file to load
 * `VK_SHADER_GUTS_LOAD_HASH=66666666` - Set the hash of the shader you want to replace
+* `VK_SHADER_GUTS_LOAD_TYPE=glsl|spirv` - Set type of the source file.
 
 ## Examples of usage
 
