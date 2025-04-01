@@ -6,16 +6,16 @@
 namespace impl {
 class ShaderGuts {
 public:
-  enum class LoadSourceType { spirv, glsl };
+  enum class ShaderLanguage { spirv, glsl };
 
   ShaderGuts()
-      : dumpEnable(false), loadEnable(false), loadType(LoadSourceType::spirv) {
+      : dumpEnable(false), loadEnable(false), loadType(ShaderLanguage::spirv) {
     namespace fs = std::filesystem;
 
     bool dump = util::envContainsString("VK_SHADER_GUTS_DUMP_PATH", dumpPath);
     bool load = util::envContainsString("VK_SHADER_GUTS_LOAD_PATH", loadPath);
     bool hash = util::envContainsString("VK_SHADER_GUTS_LOAD_HASH", loadHash);
-    util::envContains<LoadSourceType>("VK_SHADER_GUTS_LOAD_TYPE",
+    util::envContains<ShaderLanguage>("VK_SHADER_GUTS_LOAD_LANG",
                                       stringToSourceType, loadType);
 
     if (dump)
@@ -150,11 +150,11 @@ protected:
 
     auto shaderInfo = const_cast<CreateInfo *>(info);
     switch (loadType) {
-    case LoadSourceType::spirv:
+    case ShaderLanguage::spirv:
       currentShader = util::LoadSPRV(loadPath);
       break;
 
-    case LoadSourceType::glsl:
+    case ShaderLanguage::glsl:
       auto glslShader = util::LoadFile(loadPath);
       auto glslType = util::shaders::findShaderType(loadPath);
       auto glslVersion = util::shaders::findGLSLVersion(glslShader);
@@ -217,8 +217,8 @@ protected:
     }
 
     // FIXME:
-    if (loadType != LoadSourceType::spirv) {
-      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_TYPE = glsl \n";
+    if (loadType != ShaderLanguage::spirv) {
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_LANG = glsl \n";
     }
   }
 
@@ -229,7 +229,7 @@ private:
   std::string loadPath;
   std::string loadHash;
 
-  LoadSourceType loadType;
+  ShaderLanguage loadType;
 
   // Keep the shader until it loads up into the driver.
   std::vector<std::byte> currentShader;
@@ -243,8 +243,8 @@ private:
       {VK_SHADER_STAGE_FRAGMENT_BIT, "FS"},
       {VK_SHADER_STAGE_COMPUTE_BIT, "CS"},
   };
-  std::map<std::string_view, LoadSourceType> stringToSourceType{
-      {"spirv", LoadSourceType::spirv}, {"glsl", LoadSourceType::glsl}};
+  std::map<std::string_view, ShaderLanguage> stringToSourceType{
+      {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
 };
 
 }; // namespace impl
