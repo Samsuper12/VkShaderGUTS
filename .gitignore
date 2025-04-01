@@ -24,6 +24,7 @@
 .idea/
 *.code-workspace
 CMakeUserPresets.json
+.cache/
 
 # Logs and temporary files
 *.log
