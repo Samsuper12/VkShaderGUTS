@@ -11,7 +11,31 @@
 #include <string_view>
 #include <vector>
 
+#include <spirv_cross/spirv_cross.hpp>
+#include <spirv_cross/spirv_glsl.hpp>
+
 namespace util {
+
+inline auto SaveGLSLToFile(const std::vector<std::byte> &shader,
+                           std::filesystem::path path) -> void {
+  // need to convert into v<uint32_t>
+  spirv_cross::CompilerGLSL compiler(
+      std::vector<uint32_t>(reinterpret_cast<const uint32_t *>(shader.data()),
+                            reinterpret_cast<const uint32_t *>(shader.data()) +
+                                (shader.size() / sizeof(uint32_t))));
+  spirv_cross::ShaderResources resources = compiler.get_shader_resources();
+
+  spirv_cross::CompilerGLSL::Options options;
+  options.vulkan_semantics = true;
+  compiler.set_common_options(options);
+
+  std::string glslCode = compiler.compile();
+
+  if (std::ofstream file(path, std::ios::binary); file.is_open()) {
+    file.write(glslCode.c_str(), glslCode.size());
+    file.close();
+  }
+}
 
 inline auto getEnv(std::string_view env) -> std::optional<std::string> {
   if (auto value = std::getenv(env.data()))

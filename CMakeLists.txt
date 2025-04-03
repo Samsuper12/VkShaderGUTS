@@ -10,6 +10,13 @@ find_package(VulkanHeaders CONFIG)
 find_package(Vulkan CONFIG COMPONENTS glslang glslangValidator glslc)
 find_package(glslang CONFIG)
 
+find_package(spirv_cross_c_shared)
+if (spirv_cross_c_shared_FOUND)
+        message(STATUS "Found SPIRV-Cross C API!")
+else()
+        message(STATUS "Could not find SPIRV-Cross C API!")
+endif()
+
 set(LAYER_JSON "VkLayer_shader_guts")
 
 if(APPLE)
@@ -39,6 +46,10 @@ PRIVATE
 	glslang::glslang-default-resource-limits
 	glslang::SPIRV
 	glslang::SPVRemapper
+	spirv-cross-c-shared
+	spirv-cross-core
+	spirv-cross-glsl
+	spirv-cross-reflect
 
 )
 

@@ -9,14 +9,17 @@ public:
   enum class ShaderLanguage { spirv, glsl };
 
   ShaderGuts()
-      : dumpEnable(false), loadEnable(false), loadType(ShaderLanguage::spirv) {
+      : dumpEnable(false), loadEnable(false), loadLang(ShaderLanguage::spirv) {
     namespace fs = std::filesystem;
 
     bool dump = util::envContainsString("VK_SHADER_GUTS_DUMP_PATH", dumpPath);
+    util::envContains<ShaderLanguage>("VK_SHADER_GUTS_DUMP_LANG",
+                                      stringToSourceType, dumpLang);
+
     bool load = util::envContainsString("VK_SHADER_GUTS_LOAD_PATH", loadPath);
     bool hash = util::envContainsString("VK_SHADER_GUTS_LOAD_HASH", loadHash);
     util::envContains<ShaderLanguage>("VK_SHADER_GUTS_LOAD_LANG",
-                                      stringToSourceType, loadType);
+                                      stringToSourceType, loadLang);
 
     if (dump)
       dumpEnable = fs::exists(dumpPath) ? true : fs::create_directory(dumpPath);
@@ -39,14 +42,13 @@ public:
 
   auto CreateShaderModulePost(const VkShaderModuleCreateInfo *pCreateInfo,
                               VkShaderModule *pShaderModule) -> void {
-    using sourceType = uint32_t;
-
     if (!dumpEnable)
       return;
 
-    shaderModules[*pShaderModule] = std::vector<sourceType>(
-        pCreateInfo->pCode,
-        pCreateInfo->pCode + (pCreateInfo->codeSize / sizeof(sourceType)));
+    auto shaderCode = std::vector<std::byte>(pCreateInfo->codeSize);
+    std::memcpy(shaderCode.data(), pCreateInfo->pCode, pCreateInfo->codeSize);
+
+    shaderModules[*pShaderModule] = shaderCode;
   }
 
   auto CreateShadersEXT(uint32_t createInfoCount,
@@ -60,8 +62,8 @@ public:
       auto constShaderInfo = &pCreateInfos[i];
 
       if (dumpEnable)
-        DumpShader2<sourceType, VkShaderCreateInfoEXT>(
-            constShaderInfo, stageToName[constShaderInfo->stage]);
+        DumpShader2<VkShaderCreateInfoEXT>(constShaderInfo,
+                                           constShaderInfo->stage);
 
       if (loadEnable)
         LoadShader<sourceType, VkShaderCreateInfoEXT>(constShaderInfo);
@@ -88,8 +90,8 @@ public:
                 reinterpret_cast<const VkShaderModuleCreateInfo *>(next);
 
             if (dumpEnable)
-              DumpShader2<sourceType, VkShaderModuleCreateInfo>(
-                  constModuleInfo, stageToName[stage.stage]);
+              DumpShader2<VkShaderModuleCreateInfo>(constModuleInfo,
+                                                    stage.stage);
 
             if (loadEnable)
               LoadShader<sourceType, VkShaderModuleCreateInfo>(constModuleInfo);
@@ -98,8 +100,7 @@ public:
         }
 
         if (dumpEnable && shaderModules.contains(stage.module)) {
-          DumpShader<sourceType>(shaderModules[stage.module],
-                                 stageToName[stage.stage]);
+          DumpShader(shaderModules[stage.module], stage.stage);
         }
       }
     }
@@ -122,8 +123,8 @@ public:
               reinterpret_cast<const VkShaderModuleCreateInfo *>(next);
 
           if (dumpEnable)
-            DumpShader2<sourceType, VkShaderModuleCreateInfo>(
-                constModuleInfo, stageToName[pCreateInfos[i].stage.stage]);
+            DumpShader2<VkShaderModuleCreateInfo>(constModuleInfo,
+                                                  pCreateInfos[i].stage.stage);
 
           if (loadEnable)
             LoadShader<sourceType, VkShaderModuleCreateInfo>(constModuleInfo);
@@ -133,8 +134,7 @@ public:
 
       auto stage = pCreateInfos[i].stage;
       if (dumpEnable && shaderModules.contains(stage.module)) {
-        DumpShader<sourceType>(shaderModules[stage.module],
-                               stageToName[stage.stage]);
+        DumpShader(shaderModules[stage.module], stage.stage);
       }
     }
   }
@@ -149,7 +149,7 @@ protected:
       return;
 
     auto shaderInfo = const_cast<CreateInfo *>(info);
-    switch (loadType) {
+    switch (loadLang) {
     case ShaderLanguage::spirv:
       currentShader = util::LoadSPRV(loadPath);
       break;
@@ -178,28 +178,33 @@ protected:
     shaderInfo->codeSize = currentShader.size();
   }
 
-  template <typename T, typename CreateInfo>
-  auto DumpShader2(const CreateInfo *info, const std::string &stageName)
+  template <typename CreateInfo>
+  auto DumpShader2(const CreateInfo *info, const VkShaderStageFlagBits stage)
       -> void {
-    const auto shader =
-        std::vector<T>(reinterpret_cast<const T *>(info->pCode),
-                       reinterpret_cast<const T *>(info->pCode) +
-                           (info->codeSize / sizeof(T)));
-    DumpShader<T>(shader, stageName);
+    auto shaderCode = std::vector<std::byte>(info->codeSize);
+    std::memcpy(shaderCode.data(), info->pCode, info->codeSize);
+    DumpShader(shaderCode, stage);
   }
 
-  template <typename T>
-  auto DumpShader(const std::vector<T> &shader, const std::string &stageName)
-      -> void {
-    const auto folder = std::string("/" + stageName + "/");
+  auto DumpShader(const std::vector<std::byte> &shader,
+                  const VkShaderStageFlagBits stage) -> void {
+    const auto folder = std::string("/" + stageToName[stage] + "/");
     const auto hash =
-        util::Sha1Hash::compute(shader.data(), shader.size() * sizeof(T))
-            .toString();
+        util::Sha1Hash::compute(shader.data(), shader.size()).toString();
 
     if (!std::filesystem::exists(this->dumpPath + folder))
       std::filesystem::create_directory(dumpPath + folder);
 
-    util::SaveSPVToFile<T>(shader, {dumpPath + folder + hash + ".spv"});
+    switch (dumpLang) {
+    case ShaderLanguage::glsl:
+      util::SaveGLSLToFile(
+          shader, {dumpPath + folder + hash + "." + stageToFileExt[stage]});
+      break;
+    case ShaderLanguage::spirv:
+      util::SaveSPVToFile<std::byte>(shader,
+                                     {dumpPath + folder + hash + ".glsl"});
+      break;
+    }
   }
 
   auto PrintLogs() -> void {
@@ -217,7 +222,7 @@ protected:
     }
 
     // FIXME:
-    if (loadType != ShaderLanguage::spirv) {
+    if (loadLang != ShaderLanguage::spirv) {
       std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_LANG = glsl \n";
     }
   }
@@ -229,12 +234,13 @@ private:
   std::string loadPath;
   std::string loadHash;
 
-  ShaderLanguage loadType;
+  ShaderLanguage dumpLang;
+  ShaderLanguage loadLang;
 
   // Keep the shader until it loads up into the driver.
   std::vector<std::byte> currentShader;
 
-  std::map<VkShaderModule, std::vector<uint32_t>> shaderModules;
+  std::map<VkShaderModule, std::vector<std::byte>> shaderModules;
   std::map<VkShaderStageFlagBits, std::string> stageToName{
       {VK_SHADER_STAGE_VERTEX_BIT, "VS"},
       {VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, "TS_Control"},
@@ -242,6 +248,15 @@ private:
       {VK_SHADER_STAGE_GEOMETRY_BIT, "GS"},
       {VK_SHADER_STAGE_FRAGMENT_BIT, "FS"},
       {VK_SHADER_STAGE_COMPUTE_BIT, "CS"},
+  };
+
+  std::map<VkShaderStageFlagBits, std::string> stageToFileExt{
+      {VK_SHADER_STAGE_VERTEX_BIT, "vert"},
+      {VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, "tesc"},
+      {VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, "tese"},
+      {VK_SHADER_STAGE_GEOMETRY_BIT, "geom"},
+      {VK_SHADER_STAGE_FRAGMENT_BIT, "frag"},
+      {VK_SHADER_STAGE_COMPUTE_BIT, "comp"},
   };
   std::map<std::string_view, ShaderLanguage> stringToSourceType{
       {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
