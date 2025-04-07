@@ -1,17 +1,16 @@
+#include "layer.hpp"
+#include "gui.hpp"
 #include "guts.hpp"
+
 #include <memory>
 #include <mutex>
+#include <thread>
 
 using scoped_lock = std::lock_guard<std::mutex>;
 
 std::unique_ptr<impl::ShaderGuts> pShaderGuts;
+std::unique_ptr<impl::Gui> pGui;
 std::mutex global_lock;
-std::map<void *, VkLayerInstanceDispatchTable> instance_dispatch;
-std::map<void *, VkLayerDispatchTable> device_dispatch;
-
-template <typename DispatchableType> void *GetKey(DispatchableType inst) {
-  return *reinterpret_cast<void **>(inst);
-}
 
 // Thanks to Baldurk for the initial layer implementation.
 // https://github.com/baldurk/sample_layer
@@ -59,6 +58,10 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
   {
     scoped_lock l(global_lock);
     pShaderGuts = std::make_unique<impl::ShaderGuts>(impl::ShaderGuts());
+    pGui = std::make_unique<impl::Gui>(impl::Gui());
+    std::thread t([&]() { pGui->Draw(); });
+    t.detach();
+
     instance_dispatch[GetKey(*pInstance)] = dispatchTable;
   }
 
@@ -254,7 +257,6 @@ ShaderGuts_GetDeviceProcAddr(VkDevice device, const char *pName) {
   GETPROCADDR(CreateComputePipelines);
   GETPROCADDR(CreateGraphicsPipelines);
 
-  // Get shader
   GETPROCADDR(CreateShaderModule);
   GETPROCADDR(CreateShadersEXT);
 

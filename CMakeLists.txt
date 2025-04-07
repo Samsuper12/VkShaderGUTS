@@ -9,6 +9,9 @@ include(GNUInstallDirs)
 find_package(VulkanHeaders CONFIG)
 find_package(Vulkan CONFIG COMPONENTS glslang glslangValidator glslc)
 find_package(glslang CONFIG)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
+find_package(glbinding CONFIG REQUIRED)
 
 find_package(spirv_cross_c_shared)
 if (spirv_cross_c_shared_FOUND)
@@ -37,20 +40,30 @@ PUBLIC
 	src/layer.cpp
 	src/sha1.c
 	src/sha1_util.cpp
+	src/imgui/imgui_impl_glfw.cpp
+	src/imgui/imgui_impl_opengl3.cpp
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
 PRIVATE
     Vulkan::Headers
+
 	glslang::glslang
 	glslang::glslang-default-resource-limits
 	glslang::SPIRV
 	glslang::SPVRemapper
+
 	spirv-cross-c-shared
 	spirv-cross-core
 	spirv-cross-glsl
 	spirv-cross-reflect
 
+	glbinding::glbinding
+	glbinding::glbinding-aux
+
+	glfw
+
+	imgui::imgui
 )
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
