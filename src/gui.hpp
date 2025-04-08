@@ -1,7 +1,10 @@
 #pragma once
 #include "layer.hpp"
 #include "util.hpp"
+#include <cstdlib>
+#include <filesystem>
 #include <imgui.h>
+#include <string_view>
 #include <thread>
 
 #define GLFW_INCLUDE_NONE
@@ -18,9 +21,18 @@
 
 namespace impl {
 using namespace gl;
+namespace fs = std::filesystem;
 
 class Gui {
+  static constexpr std::string_view gutsFolder = "VkShaderGUTS";
+  static constexpr std::string_view saveFile = "imgui.ini";
+  static constexpr const char *glsl_version = "#version 330";
+
 public:
+  struct GuiState {
+    bool play;
+  };
+
   Gui() : enable(true), context(nullptr), window(nullptr) {
 
     util::envContainsTrue("VK_SHADER_GUTS_GUI", enable);
@@ -29,6 +41,7 @@ public:
       return;
 
     InitWindow();
+    PrepareSaveFile();
     InitImgui();
     glfwMakeContextCurrent(nullptr);
   }
@@ -59,11 +72,28 @@ public:
       glfwPollEvents();
     }
 
+    if (!saveConfigPath.empty())
+      ImGui::SaveIniSettingsToDisk(saveConfigPath.c_str());
+
     glfwMakeContextCurrent(nullptr);
     glfwTerminate();
   }
 
 private:
+  auto PrepareSaveFile() -> void {
+    const fs::path homeFolder = std::getenv("HOME");
+    const fs::path configFolder = homeFolder / ".config" / gutsFolder;
+
+    if (!fs::exists(configFolder))
+      if (!fs::create_directory(configFolder)) {
+        std::clog
+            << "[VK_SHADER_GUTS][GUI][err]: Can't create save folder by path: "
+            << configFolder << ". Default ImGui folder is enabled.\n";
+      }
+
+    saveConfigPath = configFolder / saveFile;
+  }
+
   auto InitWindow() -> void {
     glfwInit();
 
@@ -87,7 +117,6 @@ private:
   }
 
   auto InitImgui() -> void {
-    const char *glsl_version = "#version 330";
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -96,6 +125,11 @@ private:
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
+
+    if (!saveConfigPath.empty()) {
+      io.IniFilename = nullptr;
+      ImGui::LoadIniSettingsFromDisk(saveConfigPath.c_str());
+    }
 
     ImGui::StyleColorsDark();
 
@@ -113,5 +147,8 @@ private:
   ImVec2 winSize;
 
   GLFWwindow *window;
+  GuiState state;
+
+  fs::path saveConfigPath;
 };
 }; // namespace impl
