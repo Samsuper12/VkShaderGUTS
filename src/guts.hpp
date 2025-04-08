@@ -14,8 +14,8 @@ public:
 
   struct Playback {
     bool play = true;
-    uint step;
-    uint64_t frameCount;
+    uint step = 0;
+    uint64_t frameCount = 0;
   };
 
   ShaderGuts()
@@ -40,13 +40,13 @@ public:
     PrintLogs();
   }
 
-  auto SetPlayback(bool value) -> void { playback = value; }
+  auto SetPlayback(bool value) -> void { playback.play = value; }
   auto SetPlayStep() -> void { playback.step++; }
   auto GetFrameCount() const -> int64_t { return playback.frameCount; }
 
   auto AcquireNextImageKHR() -> void {
 
-    while (!playback) {
+    while (!playback.play) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
       if (playback.step > 0)
