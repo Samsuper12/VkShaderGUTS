@@ -2,11 +2,21 @@
 #include "defines.hpp"
 #include "glslangShaders.hpp"
 #include "util.hpp"
+#include <chrono>
+#include <cstdint>
+#include <sys/types.h>
+#include <thread>
 
 namespace impl {
 class ShaderGuts {
 public:
   enum class ShaderLanguage { spirv, glsl };
+
+  struct Playback {
+    bool play = true;
+    uint step;
+    uint64_t frameCount;
+  };
 
   ShaderGuts()
       : dumpEnable(false), loadEnable(false), loadLang(ShaderLanguage::spirv) {
@@ -29,6 +39,26 @@ public:
 
     PrintLogs();
   }
+
+  auto SetPlayback(bool value) -> void { playback = value; }
+  auto SetPlayStep() -> void { playback.step++; }
+  auto GetFrameCount() const -> int64_t { return playback.frameCount; }
+
+  auto AcquireNextImageKHR() -> void {
+
+    while (!playback) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+      if (playback.step > 0)
+        return;
+    }
+  };
+  auto QueuePresentKHR() -> void {
+    if (playback.step > 0)
+      playback.step--;
+
+    playback.frameCount++;
+  };
 
   auto CreateShaderModulePre(const VkShaderModuleCreateInfo *pCreateInfo)
       -> void {
@@ -260,6 +290,8 @@ private:
   };
   std::map<std::string_view, ShaderLanguage> stringToSourceType{
       {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
+
+  Playback playback;
 };
 
 }; // namespace impl

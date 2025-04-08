@@ -1,11 +1,11 @@
 #pragma once
+#include "guts.hpp"
 #include "layer.hpp"
 #include "util.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <imgui.h>
 #include <string_view>
-#include <thread>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -30,10 +30,11 @@ class Gui {
 
 public:
   struct GuiState {
-    bool play;
+    bool play = true;
   };
 
-  Gui() : enable(true), context(nullptr), window(nullptr) {
+  Gui(ShaderGuts &guts)
+      : enable(true), context(nullptr), window(nullptr), guts(guts) {
 
     util::envContainsTrue("VK_SHADER_GUTS_GUI", enable);
 
@@ -44,6 +45,23 @@ public:
     PrepareSaveFile();
     InitImgui();
     glfwMakeContextCurrent(nullptr);
+  }
+
+  auto DrawPlaybackMenu() -> void {
+    ImGui::SetNextWindowSize(ImVec2(180, 75), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Playback");
+    ImGui::Text("Current frame: %ld", guts.GetFrameCount());
+
+    if (ImGui::Button(state.play ? "Pause" : "Play")) {
+      state.play = !state.play;
+      guts.SetPlayback(state.play);
+    }
+    ImGui::SameLine();
+
+    if (ImGui::ArrowButton("button_frameStep", ImGuiDir::ImGuiDir_Right))
+      guts.SetPlayStep();
+
+    ImGui::End();
   }
 
   auto Draw() -> void {
@@ -60,11 +78,7 @@ public:
       ImGui_ImplGlfw_NewFrame();
       ImGui::NewFrame();
 
-      // content here
-      ImGui::Begin("Win1");
-
-      ImGui::Text("Delta: %.5f", 0.33325235);
-      ImGui::End();
+      DrawPlaybackMenu();
 
       ImGui::Render();
       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -150,5 +164,6 @@ private:
   GuiState state;
 
   fs::path saveConfigPath;
+  ShaderGuts &guts;
 };
 }; // namespace impl

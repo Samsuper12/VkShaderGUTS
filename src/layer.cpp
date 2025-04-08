@@ -58,7 +58,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
   {
     scoped_lock l(global_lock);
     pShaderGuts = std::make_unique<impl::ShaderGuts>(impl::ShaderGuts());
-    pGui = std::make_unique<impl::Gui>(impl::Gui());
+    pGui = std::make_unique<impl::Gui>(impl::Gui(*pShaderGuts));
     std::thread t([&]() { pGui->Draw(); });
     t.detach();
 
@@ -118,6 +118,11 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateDevice(
       gdpa(*pDevice, "vkCreateShaderModule"));
   dispatchTable.CreateShadersEXT =
       (PFN_vkCreateShadersEXT)gdpa(*pDevice, "vkCreateShadersEXT");
+
+  dispatchTable.QueuePresentKHR =
+      (PFN_vkQueuePresentKHR)gdpa(*pDevice, "vkQueuePresentKHR");
+  dispatchTable.AcquireNextImageKHR =
+      (PFN_vkAcquireNextImageKHR)gdpa(*pDevice, "vkAcquireNextImageKHR");
   {
     scoped_lock l(global_lock);
     device_dispatch[GetKey(*pDevice)] = dispatchTable;
@@ -177,6 +182,22 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateComputePipelines(
   return device_dispatch[GetKey(device)].CreateComputePipelines(
       device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
       pPipelines);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_AcquireNextImageKHR(
+    VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+    VkSemaphore semaphore, VkFence fence, uint32_t *pImageIndex) {
+  scoped_lock l(global_lock);
+  pShaderGuts->AcquireNextImageKHR();
+  return device_dispatch[GetKey(device)].AcquireNextImageKHR(
+      device, swapchain, timeout, semaphore, fence, pImageIndex);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_QueuePresentKHR(
+    VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
+  scoped_lock l(global_lock);
+  pShaderGuts->QueuePresentKHR();
+  return device_dispatch[GetKey(queue)].QueuePresentKHR(queue, pPresentInfo);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -259,6 +280,9 @@ ShaderGuts_GetDeviceProcAddr(VkDevice device, const char *pName) {
 
   GETPROCADDR(CreateShaderModule);
   GETPROCADDR(CreateShadersEXT);
+
+  GETPROCADDR(AcquireNextImageKHR);
+  GETPROCADDR(QueuePresentKHR);
 
   {
     scoped_lock l(global_lock);
