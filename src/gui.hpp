@@ -36,7 +36,9 @@ public:
   Gui(ShaderGuts &guts)
       : enable(true), context(nullptr), window(nullptr), guts(guts) {
 
+    bool pauseOnStart = false;
     util::envContainsTrue("VK_SHADER_GUTS_GUI", enable);
+    util::envContainsTrue("VK_SHADER_GUTS_GUI_PAUSE_ON_START", pauseOnStart);
 
     if (!enable)
       return;
@@ -45,6 +47,11 @@ public:
     PrepareSaveFile();
     InitImgui();
     glfwMakeContextCurrent(nullptr);
+
+    if (pauseOnStart) {
+      guts.SetPlayback(false);
+      state.play = !state.play;
+    }
   }
 
   auto DrawPlaybackMenu() -> void {
