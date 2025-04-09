@@ -13,9 +13,9 @@ public:
   enum class ShaderLanguage { spirv, glsl };
 
   struct Playback {
-    bool play = true;
-    uint step = 0;
-    uint64_t frameCount = 0;
+    bool play;
+    uint step;
+    uint64_t frameCount;
   };
 
   ShaderGuts()
@@ -37,15 +37,16 @@ public:
     if (load && hash)
       loadEnable = hash && fs::exists(loadPath);
 
+    playback.play = true;
+
     PrintLogs();
   }
 
   auto SetPlayback(bool value) -> void { playback.play = value; }
-  auto SetPlayStep() -> void { playback.step++; }
-  auto GetFrameCount() const -> int64_t { return playback.frameCount; }
+  auto SetPlayStep(uint value) -> void { playback.step += value; }
+  auto GetFrameCount() const -> uint64_t { return playback.frameCount; }
 
   auto AcquireNextImageKHR() -> void {
-
     while (!playback.play) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -291,7 +292,7 @@ private:
   std::map<std::string_view, ShaderLanguage> stringToSourceType{
       {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
 
-  Playback playback;
+  Playback playback{};
 };
 
 }; // namespace impl

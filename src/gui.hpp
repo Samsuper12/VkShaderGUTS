@@ -30,7 +30,7 @@ class Gui {
 
 public:
   struct GuiState {
-    bool play = true;
+    bool play;
   };
 
   Gui(ShaderGuts &guts)
@@ -48,10 +48,8 @@ public:
     InitImgui();
     glfwMakeContextCurrent(nullptr);
 
-    if (pauseOnStart) {
-      guts.SetPlayback(false);
-      state.play = !state.play;
-    }
+    state.play = !pauseOnStart;
+    guts.SetPlayback(state.play);
   }
 
   auto DrawPlaybackMenu() -> void {
@@ -63,10 +61,16 @@ public:
       state.play = !state.play;
       guts.SetPlayback(state.play);
     }
+
     ImGui::SameLine();
 
     if (ImGui::ArrowButton("button_frameStep", ImGuiDir::ImGuiDir_Right))
-      guts.SetPlayStep();
+      guts.SetPlayStep(1);
+
+    ImGui::SameLine();
+
+    if (ImGui::Button(">>"))
+      guts.SetPlayStep(10);
 
     ImGui::End();
   }
@@ -110,6 +114,7 @@ private:
         std::clog
             << "[VK_SHADER_GUTS][GUI][err]: Can't create save folder by path: "
             << configFolder << ". Default ImGui folder is enabled.\n";
+        return;
       }
 
     saveConfigPath = configFolder / saveFile;
@@ -168,7 +173,7 @@ private:
   ImVec2 winSize;
 
   GLFWwindow *window;
-  GuiState state;
+  GuiState state{};
 
   fs::path saveConfigPath;
   ShaderGuts &guts;
