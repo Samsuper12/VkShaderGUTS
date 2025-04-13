@@ -42,6 +42,10 @@ PUBLIC
 	src/sha1_util.cpp
 	src/imgui/imgui_impl_glfw.cpp
 	src/imgui/imgui_impl_opengl3.cpp
+
+	src/gui_elements/PipelinesMenu.cpp
+	src/gui_elements/PlaybackMenu.cpp
+
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

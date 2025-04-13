@@ -1,10 +1,13 @@
 #pragma once
+#include "PipelineLibrary.hpp"
 #include "guts.hpp"
 #include "layer.hpp"
 #include "util.hpp"
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <imgui.h>
+#include <ranges>
 #include <string_view>
 
 #define GLFW_INCLUDE_NONE
@@ -18,6 +21,8 @@
 
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
+
+#include "imgui/imgui_util.hpp"
 
 namespace impl {
 using namespace gl;
@@ -34,7 +39,8 @@ public:
   };
 
   Gui(ShaderGuts &guts)
-      : enable(true), context(nullptr), window(nullptr), guts(guts) {
+      : enable(true), context(nullptr), window(nullptr), guts(guts),
+        pipeLibrary(guts.GetPipeLineLibrary()) {
 
     bool pauseOnStart = false;
     util::envContainsTrue("VK_SHADER_GUTS_GUI", enable);
@@ -52,28 +58,9 @@ public:
     guts.SetPlayback(state.play);
   }
 
-  auto DrawPlaybackMenu() -> void {
-    ImGui::SetNextWindowSize(ImVec2(180, 75), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Playback");
-    ImGui::Text("Current frame: %ld", guts.GetFrameCount());
-
-    if (ImGui::Button(state.play ? "Pause" : "Play")) {
-      state.play = !state.play;
-      guts.SetPlayback(state.play);
-    }
-
-    ImGui::SameLine();
-
-    if (ImGui::ArrowButton("button_frameStep", ImGuiDir::ImGuiDir_Right))
-      guts.SetPlayStep(1);
-
-    ImGui::SameLine();
-
-    if (ImGui::Button(">>"))
-      guts.SetPlayStep(10);
-
-    ImGui::End();
-  }
+  auto DrawPlaybackMenu() -> void;
+  auto DrawPipilinesMenu() -> void;
+  auto DrawPipelines(const std::ranges::input_range auto &pipelines) -> void;
 
   auto Draw() -> void {
     if (!enable)
@@ -90,6 +77,7 @@ public:
       ImGui::NewFrame();
 
       DrawPlaybackMenu();
+      DrawPipilinesMenu();
 
       ImGui::Render();
       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -177,5 +165,9 @@ private:
 
   fs::path saveConfigPath;
   ShaderGuts &guts;
+  PipelineLibrary &pipeLibrary;
+
+  std::vector<PipelineLibrary::Pipeline> allPipelines;
+  std::vector<PipelineLibrary::Pipeline> lastFramePipelines;
 };
 }; // namespace impl

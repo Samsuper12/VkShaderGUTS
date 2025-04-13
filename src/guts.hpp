@@ -4,14 +4,19 @@
 #include "util.hpp"
 #include <chrono>
 #include <cstdint>
+#include <shared_mutex>
+#include <string_view>
 #include <sys/types.h>
 #include <thread>
+#include <unordered_set>
+#include <vulkan/vulkan_core.h>
+
+#include "PipelineLibrary.hpp"
 
 namespace impl {
 class ShaderGuts {
 public:
   enum class ShaderLanguage { spirv, glsl };
-
   struct Playback {
     bool play;
     uint step;
@@ -45,20 +50,23 @@ public:
   auto SetPlayback(bool value) -> void { playback.play = value; }
   auto SetPlayStep(uint value) -> void { playback.step += value; }
   auto GetFrameCount() const -> uint64_t { return playback.frameCount; }
+  auto GetPipeLineLibrary() -> PipelineLibrary & { return pipeLibrary; };
 
   auto AcquireNextImageKHR() -> void {
     while (!playback.play) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
       if (playback.step > 0)
-        return;
+        break;
     }
+    pipeLibrary.ResetUsed();
   };
   auto QueuePresentKHR() -> void {
     if (playback.step > 0)
       playback.step--;
 
     playback.frameCount++;
+    pipeLibrary.EndOfFrame();
   };
 
   auto CreateShaderModulePre(const VkShaderModuleCreateInfo *pCreateInfo)
@@ -101,8 +109,9 @@ public:
     }
   }
 
-  auto CreateGraphicsPipelines(uint32_t createInfoCount,
-                               const VkGraphicsPipelineCreateInfo *pCreateInfos)
+  auto
+  PreCreateGraphicsPipelines(uint32_t createInfoCount,
+                             const VkGraphicsPipelineCreateInfo *pCreateInfos)
       -> void {
     using sourceType = uint32_t;
 
@@ -137,8 +146,24 @@ public:
     }
   }
 
-  auto CreateComputePipelines(uint32_t createInfoCount,
-                              const VkComputePipelineCreateInfo *pCreateInfos) {
+  auto
+  PostCreateGraphicsPiepelines(VkResult result, float duration,
+                               uint32_t createInfoCount,
+                               const VkGraphicsPipelineCreateInfo *pCreateInfos,
+                               VkPipeline *pPipelines) -> void {
+    for (size_t i = 0; i < createInfoCount; ++i)
+      pipeLibrary.AddPipeline(result, duration, PipelineLibrary::Type::Graphics,
+                              createInfoCount, pCreateInfos, pPipelines);
+  }
+
+  auto CmdBindPipeline(VkPipeline pipeline) -> void {
+
+    pipeLibrary.MarkUsed(pipeline);
+  }
+
+  auto
+  PreCreateComputePipelines(uint32_t createInfoCount,
+                            const VkComputePipelineCreateInfo *pCreateInfos) {
     using sourceType = uint32_t;
 
     if (!(dumpEnable || loadEnable))
@@ -167,6 +192,16 @@ public:
       if (dumpEnable && shaderModules.contains(stage.module)) {
         DumpShader(shaderModules[stage.module], stage.stage);
       }
+    }
+  }
+
+  auto PostCreateComputePipelines(
+      VkResult result, float duration, uint32_t createInfoCount,
+      const VkComputePipelineCreateInfo *pCreateInfos, VkPipeline *pPipelines) {
+
+    for (size_t i = 0; i < createInfoCount; i++) {
+      pipeLibrary.AddPipeline(result, duration, PipelineLibrary::Type::Compute,
+                              createInfoCount, pCreateInfos, pPipelines);
     }
   }
 
@@ -289,10 +324,12 @@ private:
       {VK_SHADER_STAGE_FRAGMENT_BIT, "frag"},
       {VK_SHADER_STAGE_COMPUTE_BIT, "comp"},
   };
+
   std::map<std::string_view, ShaderLanguage> stringToSourceType{
       {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
 
   Playback playback{};
+  PipelineLibrary pipeLibrary;
 };
 
 }; // namespace impl

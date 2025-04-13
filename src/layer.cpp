@@ -2,6 +2,7 @@
 #include "gui.hpp"
 #include "guts.hpp"
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -123,6 +124,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateDevice(
       (PFN_vkQueuePresentKHR)gdpa(*pDevice, "vkQueuePresentKHR");
   dispatchTable.AcquireNextImageKHR =
       (PFN_vkAcquireNextImageKHR)gdpa(*pDevice, "vkAcquireNextImageKHR");
+
+  dispatchTable.CmdBindPipeline =
+      (PFN_vkCmdBindPipeline)gdpa(*pDevice, "vkCmdBindPipeline");
   {
     scoped_lock l(global_lock);
     device_dispatch[GetKey(*pDevice)] = dispatchTable;
@@ -167,10 +171,18 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateGraphicsPipelines(
     const VkGraphicsPipelineCreateInfo *pCreateInfos,
     const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
   scoped_lock l(global_lock);
-  pShaderGuts->CreateGraphicsPipelines(createInfoCount, pCreateInfos);
-  return device_dispatch[GetKey(device)].CreateGraphicsPipelines(
+  pShaderGuts->PreCreateGraphicsPipelines(createInfoCount, pCreateInfos);
+
+  auto start = std::chrono::high_resolution_clock::now();
+  auto res = device_dispatch[GetKey(device)].CreateGraphicsPipelines(
       device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
       pPipelines);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  pShaderGuts->PostCreateGraphicsPiepelines(
+      res, std::chrono::duration<float, std::milli>(end - start).count(),
+      createInfoCount, pCreateInfos, pPipelines);
+  return res;
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateComputePipelines(
@@ -178,10 +190,27 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateComputePipelines(
     const VkComputePipelineCreateInfo *pCreateInfos,
     const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
   scoped_lock l(global_lock);
-  pShaderGuts->CreateComputePipelines(createInfoCount, pCreateInfos);
-  return device_dispatch[GetKey(device)].CreateComputePipelines(
+  pShaderGuts->PreCreateComputePipelines(createInfoCount, pCreateInfos);
+  auto start = std::chrono::high_resolution_clock::now();
+
+  auto res = device_dispatch[GetKey(device)].CreateComputePipelines(
       device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
       pPipelines);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  pShaderGuts->PostCreateComputePipelines(
+      res, std::chrono::duration<float, std::milli>(end - start).count(),
+      createInfoCount, pCreateInfos, pPipelines);
+  return res;
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL ShaderGuts_CmdBindPipeline(
+    VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+    VkPipeline pipeline) {
+  scoped_lock l(global_lock);
+  pShaderGuts->CmdBindPipeline(pipeline);
+  return device_dispatch[GetKey(commandBuffer)].CmdBindPipeline(
+      commandBuffer, pipelineBindPoint, pipeline);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_AcquireNextImageKHR(
@@ -283,6 +312,8 @@ ShaderGuts_GetDeviceProcAddr(VkDevice device, const char *pName) {
 
   GETPROCADDR(AcquireNextImageKHR);
   GETPROCADDR(QueuePresentKHR);
+
+  GETPROCADDR(CmdBindPipeline);
 
   {
     scoped_lock l(global_lock);
