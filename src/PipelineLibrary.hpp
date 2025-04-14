@@ -6,11 +6,24 @@
 #include <mutex>
 #include <ranges>
 #include <shared_mutex>
+#include <utility>
 #include <vector>
 
 class PipelineLibrary {
 public:
   enum class Type { Graphics, Compute, ShaderObjectEXT };
+
+  static inline auto TypeToString(Type t) noexcept -> std::string {
+    switch (t) {
+    case Type::Graphics:
+      return "Graphics";
+    case Type::Compute:
+      return "Compute";
+    case Type::ShaderObjectEXT:
+      return "ShaderObjectEXT";
+    }
+    std::unreachable();
+  };
 
   struct Pipeline {
 

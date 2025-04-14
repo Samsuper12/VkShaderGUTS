@@ -1,6 +1,5 @@
+#include "PipelineLibrary.hpp"
 #include "gui.hpp"
-#include "imgui/imgui_util.hpp"
-#include <imgui.h>
 
 namespace impl {
 
@@ -111,59 +110,88 @@ auto DrawVkGraphicsPipelineCreateInfo() {
     ImGui::Text("Result");
   }
 }
-auto DrawPipelinesMenuInfo() {
+
+auto DrawPipelinesMenuInfo(bool empty,
+                           const PipelineLibrary::Pipeline &pipeline) {
 
   util::imgui::CenterText("Pipeline Info");
+
+  const char *emptyLine = "";
+  std::array<char, 128> valueLine;
+
   {
     ImGui::Text("Index:");
     ImGui::SameLine();
-    ImGui::Text("Result");
+
+    if (!empty) {
+      std::ranges::fill(valueLine, '\0');
+      std::format_to(valueLine.begin(), "{}", pipeline.data.index);
+    }
+
+    ImGui::Text(empty ? emptyLine : valueLine.data());
   }
 
   {
     ImGui::Text("Edited:");
     ImGui::SameLine();
-    ImGui::Text("Result");
+
+    if (!empty) {
+      std::ranges::fill(valueLine, '\0');
+      std::format_to(valueLine.begin(), "{}",
+                     pipeline.data.edited ? "Yes" : "No");
+    }
+    ImGui::Text(empty ? emptyLine : valueLine.data());
   }
 
   {
     ImGui::Text("Type:");
     ImGui::SameLine();
-    ImGui::Text("Result");
+    if (!empty) {
+      std::ranges::fill(valueLine, '\0');
+      std::format_to(valueLine.begin(), "{}",
+                     PipelineLibrary::TypeToString(pipeline.data.type));
+    }
+    ImGui::Text(empty ? emptyLine : valueLine.data());
   }
 
   {
     ImGui::Text("Result:");
     ImGui::SameLine();
-    ImGui::Text("Result");
+    if (!empty) {
+      std::ranges::fill(valueLine, '\0');
+      std::format_to(valueLine.begin(), "{}",
+                     pipeline.data.result == VK_SUCCESS ? "Success" : "Failed");
+    }
+    ImGui::Text(empty ? emptyLine : valueLine.data());
   }
 
   {
     ImGui::Text("Build Time:");
     ImGui::SameLine();
-    ImGui::Text("Result");
+    if (!empty) {
+      std::ranges::fill(valueLine, '\0');
+      std::format_to(valueLine.begin(), "{:.3f}ms",
+                     pipeline.data.compileDuration);
+    }
+    ImGui::Text(empty ? emptyLine : valueLine.data());
   }
 
-  /* TODO: Put it in the separate tab like InstanceInfo
-  {
-    ImGui::Text("DynamicState:");
-    ImGui::SameLine();
-    ImGui::Text("Result");
-  }
-
-  {
-    ImGui::Text("DynamicPipeline:");
-    ImGui::SameLine();
-    ImGui::Text("Result");
-  }
-    */
   ImGui::Separator();
+  ImGui::Text("VkGraphicsPipelineCreateInfo:");
 
-  {
-    ImGui::Text("VkGraphicsPipelineCreateInfo:");
-  }
-
-  DrawVkGraphicsPipelineCreateInfo(); // or DrawVkComputePipelineCreateInfo
+  /*
+    switch (pipeline.data.type) {
+    case PipelineLibrary::Type::Graphics:
+      DrawVkGraphicsPipelineCreateInfo();
+      break;
+    case PipelineLibrary::Type::Compute:
+      // DrawVkComputePipelineCreateInfo();
+      break;
+    case PipelineLibrary::Type::ShaderObjectEXT:
+      // DrawShaderObjectEXT();
+      break;
+    }
+      */
 }
 
 auto Gui::DrawPipilinesMenu() -> void {
@@ -191,8 +219,10 @@ auto Gui::DrawPipilinesMenu() -> void {
 
         if (state.play)
           util::imgui::CenterText("Wainting for pause.");
-        else
+        else {
           DrawPipelines(allPipelines);
+          state.currentPipelineTab = GuiState::PipelineTabs::all;
+        }
 
         ImGui::EndTabItem();
       }
@@ -201,13 +231,20 @@ auto Gui::DrawPipilinesMenu() -> void {
 
         if (state.play)
           util::imgui::CenterText("Wainting for pause.");
-        else
+        else {
           DrawPipelines(lastFramePipelines);
+          state.currentPipelineTab = GuiState::PipelineTabs::lastFrame;
+        }
 
         ImGui::EndTabItem();
       }
 
+      // TODO
       if (ImGui::BeginTabItem("Edited")) {
+
+        if (false) {
+          state.currentPipelineTab = GuiState::PipelineTabs::edited;
+        }
 
         util::imgui::CenterText("TODO");
         ImGui::EndTabItem();
@@ -224,8 +261,16 @@ auto Gui::DrawPipilinesMenu() -> void {
     ImGui::BeginChild("ChildR", ImVec2(0, ImGui::GetContentRegionAvail().y),
                       ImGuiChildFlags_None);
 
-    DrawPipelinesMenuInfo();
+    const auto &tab =
+        state.currentPipelineTab == GuiState::PipelineTabs::all ? allPipelines
+        : state.currentPipelineTab == GuiState::PipelineTabs::lastFrame
+            ? lastFramePipelines
+            : editedPipelines;
+
+    auto drawEmpty = !(state.selectedRow <= tab.size() && !tab.empty());
     // table with shaders here
+
+    DrawPipelinesMenuInfo(drawEmpty, tab[state.selectedRow]);
 
     ImGui::EndChild();
   }
@@ -235,20 +280,6 @@ auto Gui::DrawPipilinesMenu() -> void {
 
 auto Gui::DrawPipelines(const std::ranges::input_range auto &pipelines)
     -> void {
-  using PipelineType = PipelineLibrary::Type;
-
-  auto TypeToString = [](PipelineType t) -> std::string {
-    switch (t) {
-    case PipelineType::Graphics:
-      return "Graphics";
-    case PipelineType::Compute:
-      return "Compute";
-    case PipelineType::ShaderObjectEXT:
-      return "ShaderObjectEXT";
-    }
-    std::unreachable();
-  };
-
   if (ImGui::BeginTable("##Basket", 4,
                         ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
                             ImGuiTableFlags_BordersOuter |
@@ -284,9 +315,11 @@ auto Gui::DrawPipelines(const std::ranges::input_range auto &pipelines)
           std::format_to(text.begin(), "VkPipeline{}", pipelines[n].data.index);
           bool item_is_selected = selection.Contains((ImGuiID)n);
           ImGui::SetNextItemSelectionUserData(n);
-          ImGui::Selectable(text.data(), item_is_selected,
-                            ImGuiSelectableFlags_SpanAllColumns |
-                                ImGuiSelectableFlags_AllowOverlap);
+          if (ImGui::Selectable(text.data(), item_is_selected,
+                                ImGuiSelectableFlags_SpanAllColumns |
+                                    ImGuiSelectableFlags_AllowOverlap)) {
+            state.selectedRow = n;
+          }
           std::ranges::fill(text, '\0');
         }
 
@@ -298,7 +331,7 @@ auto Gui::DrawPipelines(const std::ranges::input_range auto &pipelines)
         { // Type
           ImGui::TableNextColumn();
           std::format_to(text.begin(), "{}",
-                         TypeToString(pipelines[n].data.type));
+                         PipelineLibrary::TypeToString(pipelines[n].data.type));
           ImGui::Text(text.data());
           std::ranges::fill(text, '\0');
         }

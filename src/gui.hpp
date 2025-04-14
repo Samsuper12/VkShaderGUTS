@@ -35,7 +35,11 @@ class Gui {
 
 public:
   struct GuiState {
+    enum class PipelineTabs { all, lastFrame, edited };
+
+    PipelineTabs currentPipelineTab;
     bool play;
+    uint32_t selectedRow;
   };
 
   Gui(ShaderGuts &guts)
@@ -169,5 +173,6 @@ private:
 
   std::vector<PipelineLibrary::Pipeline> allPipelines;
   std::vector<PipelineLibrary::Pipeline> lastFramePipelines;
+  std::vector<PipelineLibrary::Pipeline> editedPipelines;
 };
 }; // namespace impl
