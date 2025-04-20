@@ -57,6 +57,10 @@ public:
 
   PipelineLibrary() : canPull(true) {}
 
+  PipelineLibrary(const PipelineLibrary &) = delete;
+  PipelineLibrary(PipelineLibrary &) = delete;
+  PipelineLibrary &operator=(const PipelineLibrary &) = delete;
+
   PipelineLibrary(PipelineLibrary &&other) {
     std::unique_lock lock(allMutex);
     allPipelines = other.allPipelines;

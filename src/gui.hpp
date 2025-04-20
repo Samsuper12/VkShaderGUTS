@@ -51,6 +51,7 @@ public:
   Gui(ShaderGuts &guts, const std::string &appname)
       : enable(true), context(nullptr), window(nullptr), guts(guts),
         pipeLibrary(guts.GetPipeLineLibrary()) {
+    state.play = true;
     bool pauseOnStart = false;
     util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
     util::envContainsTrueOrPair(
@@ -106,10 +107,8 @@ public:
       return;
 
     InitWindow(appname);
-    PrepareSaveFile();
     InitImgui();
     glfwMakeContextCurrent(nullptr);
-    // FIXME: set checkpoint type
     if (pauseOnStart) {
       state.play = !pauseOnStart;
       state.checkpointFunction =
@@ -119,31 +118,10 @@ public:
     }
   }
 
-  ~Gui() {
-    if (!saveConfigPath.empty())
-      ImGui::SaveIniSettingsToDisk(saveConfigPath.c_str());
-
-    glfwMakeContextCurrent(nullptr);
-    glfwTerminate();
-  }
-
+  ~Gui() { drawThread.request_stop(); }
   Gui(const Gui &) = delete;
   Gui &operator=(const Gui &) = delete;
-
   Gui(Gui &&) = default;
-  // Gui &&operator=(Gui &&) = default;
-  /*
-  Gui(const Gui &&other) : guts(other.guts), pipeLibrary(other.pipeLibrary) {
-    glfwMakeContextCurrent(nullptr);
-
-    window = other.window;
-    context = other.context;
-    winSize = other.winSize;
-    allPipelines = std::move(other.allPipelines);
-    lastFramePipelines = std::move(other.lastFramePipelines);
-    editedPipelines = std::move(other.editedPipelines);
-  }
-    */
 
   auto DrawPlaybackMenu() -> void;
   auto DrawPipilinesMenu() -> void;
@@ -234,6 +212,8 @@ private:
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
+
+    PrepareSaveFile();
 
     if (!saveConfigPath.empty()) {
       io.IniFilename = nullptr;
