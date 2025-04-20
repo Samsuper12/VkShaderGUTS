@@ -2,22 +2,52 @@
 #include "defines.hpp"
 #include "glslangShaders.hpp"
 #include "util.hpp"
+#include <any>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <shared_mutex>
 #include <string_view>
 #include <sys/types.h>
 #include <thread>
-#include <unordered_set>
-#include <vulkan/vulkan_core.h>
+#include <utility>
 
 #include "PipelineLibrary.hpp"
 
 namespace impl {
+
+enum class cmd_t {
+  playback,
+  playstep,
+  checkpointType,
+  checkpointFunction,
+  frameCount
+};
+
+struct Command {
+  cmd_t cmd;
+  std::any payload;
+};
 class ShaderGuts {
 public:
   enum class ShaderLanguage { spirv, glsl };
+  enum class CheckpointType { Function };
+  enum class CheckpointFunction {
+    vkCreateInstance,
+    vkCreateDevice,
+    vkCreateGraphicsPipelines,
+    vkCreateComputePipelines,
+    vkCmdBindPipeline,
+    vkAcquireNextImageKHR,
+    vkQueuePresentKHR
+  };
+
+  // TODO: move to the global space later
+
   struct Playback {
+    // TODO:  Pipeline
+    CheckpointType checkpointType;
+    CheckpointFunction checkpointFunction;
     bool play;
     uint step;
     uint64_t frameCount;
@@ -47,24 +77,46 @@ public:
     PrintLogs();
   }
 
-  auto SetPlayback(bool value) -> void { playback.play = value; }
-  auto SetPlayStep(uint value) -> void { playback.step += value; }
+  auto LockVulkan(CheckpointFunction f) -> void {
+    if (playback.checkpointType == CheckpointType::Function &&
+        f == playback.checkpointFunction) {
+      while (!playback.play) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        if (playback.step > 0) {
+          playback.step--;
+          break;
+        }
+      }
+    }
+  }
+
+  auto Execute(const Command &cmd) -> void {
+
+    switch (cmd.cmd) {
+    case cmd_t::playback:
+      playback.play = std::any_cast<bool>(cmd.payload);
+      break;
+    case cmd_t::playstep:
+      playback.step += std::any_cast<int>(cmd.payload);
+      break;
+    case cmd_t::checkpointType:
+      playback.checkpointType = std::any_cast<CheckpointType>(cmd.payload);
+      break;
+    case cmd_t::checkpointFunction:
+      playback.checkpointFunction =
+          std::any_cast<CheckpointFunction>(cmd.payload);
+      break;
+    default:
+      break;
+    }
+  }
+
   auto GetFrameCount() const -> uint64_t { return playback.frameCount; }
   auto GetPipeLineLibrary() -> PipelineLibrary & { return pipeLibrary; };
 
-  auto AcquireNextImageKHR() -> void {
-    while (!playback.play) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-      if (playback.step > 0)
-        break;
-    }
-    pipeLibrary.ResetUsed();
-  };
+  auto AcquireNextImageKHR() -> void { pipeLibrary.ResetUsed(); };
   auto QueuePresentKHR() -> void {
-    if (playback.step > 0)
-      playback.step--;
-
     playback.frameCount++;
     pipeLibrary.EndOfFrame();
   };
@@ -157,7 +209,6 @@ public:
   }
 
   auto CmdBindPipeline(VkPipeline pipeline) -> void {
-
     pipeLibrary.MarkUsed(pipeline);
   }
 
@@ -289,7 +340,8 @@ protected:
 
     // FIXME:
     if (loadLang != ShaderLanguage::spirv) {
-      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_LANG = glsl \n";
+      std::clog << "[VK_SHADER_GUTS][log]: VK_SHADER_GUTS_LOAD_LANG = "
+                   "glsl \n";
     }
   }
 

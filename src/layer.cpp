@@ -1,8 +1,10 @@
 #include "layer.hpp"
 #include "gui.hpp"
 #include "guts.hpp"
+#include "util.hpp"
 
 #include <chrono>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -12,6 +14,7 @@ using scoped_lock = std::lock_guard<std::mutex>;
 std::unique_ptr<impl::ShaderGuts> pShaderGuts;
 std::unique_ptr<impl::Gui> pGui;
 std::mutex global_lock;
+static bool enable = false;
 
 // Thanks to Baldurk for the initial layer implementation.
 // https://github.com/baldurk/sample_layer
@@ -30,11 +33,38 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
          (layerCreateInfo->sType !=
               VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO ||
           layerCreateInfo->function != VK_LAYER_LINK_INFO)) {
+
     layerCreateInfo = (VkLayerInstanceCreateInfo *)layerCreateInfo->pNext;
   }
 
   if (layerCreateInfo == NULL) {
     return VK_ERROR_INITIALIZATION_FAILED;
+  }
+
+  { // Init GUTS
+    scoped_lock l(global_lock);
+    std::string targetName;
+
+    util::envContainsString("VK_SHADER_GUTS_TARGET_APPNAME", targetName);
+    if (pCreateInfo->pApplicationInfo && !targetName.empty()) {
+      if (targetName.contains(
+              pCreateInfo->pApplicationInfo->pApplicationName)) {
+        enable = true;
+      }
+    }
+
+    if (targetName.empty())
+      enable = true;
+
+    if (enable) {
+      pShaderGuts = std::make_unique<impl::ShaderGuts>();
+
+      pGui = std::make_unique<impl::Gui>(*pShaderGuts, targetName);
+
+      pGui->Launch();
+      pShaderGuts->LockVulkan(
+          impl::ShaderGuts::CheckpointFunction::vkCreateInstance);
+    }
   }
 
   PFN_vkGetInstanceProcAddr gpa =
@@ -44,7 +74,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
   PFN_vkCreateInstance createFunc = reinterpret_cast<PFN_vkCreateInstance>(
       gpa(VK_NULL_HANDLE, "vkCreateInstance"));
 
-  VkResult ret = createFunc(pCreateInfo, pAllocator, pInstance);
+  createFunc(pCreateInfo, pAllocator, pInstance);
 
   VkLayerInstanceDispatchTable dispatchTable;
   dispatchTable.GetInstanceProcAddr =
@@ -58,14 +88,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
 
   {
     scoped_lock l(global_lock);
-    pShaderGuts = std::make_unique<impl::ShaderGuts>(impl::ShaderGuts());
-    pGui = std::make_unique<impl::Gui>(impl::Gui(*pShaderGuts));
-    std::thread t([&]() { pGui->Draw(); });
-    t.detach();
-
     instance_dispatch[GetKey(*pInstance)] = dispatchTable;
   }
-
   return VK_SUCCESS;
 }
 
@@ -73,6 +97,10 @@ VK_LAYER_EXPORT void VKAPI_CALL ShaderGuts_DestroyInstance(
     VkInstance instance, const VkAllocationCallbacks *pAllocator) {
   scoped_lock l(global_lock);
   instance_dispatch.erase(GetKey(instance));
+  if (enable) {
+    pGui.reset();
+    pShaderGuts.reset();
+  }
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateDevice(
@@ -100,8 +128,14 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateDevice(
 
   PFN_vkCreateDevice createFunc = reinterpret_cast<PFN_vkCreateDevice>(
       gipa(VK_NULL_HANDLE, "vkCreateDevice"));
+  {
+    scoped_lock l(global_lock);
+    if (enable)
+      pShaderGuts->LockVulkan(
+          impl::ShaderGuts::CheckpointFunction::vkCreateDevice);
+  }
 
-  VkResult ret = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
+  createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
 
   VkLayerDispatchTable dispatchTable;
 
@@ -131,14 +165,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateDevice(
     scoped_lock l(global_lock);
     device_dispatch[GetKey(*pDevice)] = dispatchTable;
   }
-
   return VK_SUCCESS;
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL ShaderGuts_DestroyDevice(
     VkDevice device, const VkAllocationCallbacks *pAllocator) {
   scoped_lock l(global_lock);
-
   device_dispatch.erase(GetKey(device));
 }
 
@@ -149,10 +181,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateShaderModule(
     VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule) {
   scoped_lock l(global_lock);
-  pShaderGuts->CreateShaderModulePre(pCreateInfo);
+  if (enable)
+    pShaderGuts->CreateShaderModulePre(pCreateInfo);
   auto ret = device_dispatch[GetKey(device)].CreateShaderModule(
       device, pCreateInfo, pAllocator, pShaderModule);
-  pShaderGuts->CreateShaderModulePost(pCreateInfo, pShaderModule);
+  if (enable)
+    pShaderGuts->CreateShaderModulePost(pCreateInfo, pShaderModule);
   return ret;
 }
 
@@ -161,7 +195,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateShadersEXT(
     const VkShaderCreateInfoEXT *pCreateInfos,
     const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders) {
   scoped_lock l(global_lock);
-  pShaderGuts->CreateShadersEXT(createInfoCount, pCreateInfos);
+  if (enable)
+    pShaderGuts->CreateShadersEXT(createInfoCount, pCreateInfos);
   return device_dispatch[GetKey(device)].CreateShadersEXT(
       device, createInfoCount, pCreateInfos, pAllocator, pShaders);
 }
@@ -171,7 +206,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateGraphicsPipelines(
     const VkGraphicsPipelineCreateInfo *pCreateInfos,
     const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
   scoped_lock l(global_lock);
-  pShaderGuts->PreCreateGraphicsPipelines(createInfoCount, pCreateInfos);
+
+  if (enable) {
+    pShaderGuts->LockVulkan(
+        impl::ShaderGuts::CheckpointFunction::vkCreateGraphicsPipelines);
+    pShaderGuts->PreCreateGraphicsPipelines(createInfoCount, pCreateInfos);
+  }
 
   auto start = std::chrono::high_resolution_clock::now();
   auto res = device_dispatch[GetKey(device)].CreateGraphicsPipelines(
@@ -179,9 +219,10 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateGraphicsPipelines(
       pPipelines);
   auto end = std::chrono::high_resolution_clock::now();
 
-  pShaderGuts->PostCreateGraphicsPiepelines(
-      res, std::chrono::duration<float, std::milli>(end - start).count(),
-      createInfoCount, pCreateInfos, pPipelines);
+  if (enable)
+    pShaderGuts->PostCreateGraphicsPiepelines(
+        res, std::chrono::duration<float, std::milli>(end - start).count(),
+        createInfoCount, pCreateInfos, pPipelines);
   return res;
 }
 
@@ -190,7 +231,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateComputePipelines(
     const VkComputePipelineCreateInfo *pCreateInfos,
     const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
   scoped_lock l(global_lock);
-  pShaderGuts->PreCreateComputePipelines(createInfoCount, pCreateInfos);
+  if (enable) {
+    pShaderGuts->LockVulkan(
+        impl::ShaderGuts::CheckpointFunction::vkCreateComputePipelines);
+    pShaderGuts->PreCreateComputePipelines(createInfoCount, pCreateInfos);
+  }
+
   auto start = std::chrono::high_resolution_clock::now();
 
   auto res = device_dispatch[GetKey(device)].CreateComputePipelines(
@@ -198,9 +244,10 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateComputePipelines(
       pPipelines);
   auto end = std::chrono::high_resolution_clock::now();
 
-  pShaderGuts->PostCreateComputePipelines(
-      res, std::chrono::duration<float, std::milli>(end - start).count(),
-      createInfoCount, pCreateInfos, pPipelines);
+  if (enable)
+    pShaderGuts->PostCreateComputePipelines(
+        res, std::chrono::duration<float, std::milli>(end - start).count(),
+        createInfoCount, pCreateInfos, pPipelines);
   return res;
 }
 
@@ -208,7 +255,12 @@ VK_LAYER_EXPORT void VKAPI_CALL ShaderGuts_CmdBindPipeline(
     VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
     VkPipeline pipeline) {
   scoped_lock l(global_lock);
-  pShaderGuts->CmdBindPipeline(pipeline);
+  if (enable) {
+    pShaderGuts->LockVulkan(
+        impl::ShaderGuts::CheckpointFunction::vkCmdBindPipeline);
+    pShaderGuts->CmdBindPipeline(pipeline);
+  }
+
   return device_dispatch[GetKey(commandBuffer)].CmdBindPipeline(
       commandBuffer, pipelineBindPoint, pipeline);
 }
@@ -217,7 +269,13 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_AcquireNextImageKHR(
     VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
     VkSemaphore semaphore, VkFence fence, uint32_t *pImageIndex) {
   scoped_lock l(global_lock);
-  pShaderGuts->AcquireNextImageKHR();
+
+  if (enable) {
+    pShaderGuts->LockVulkan(
+        impl::ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR);
+    pShaderGuts->AcquireNextImageKHR();
+  }
+
   return device_dispatch[GetKey(device)].AcquireNextImageKHR(
       device, swapchain, timeout, semaphore, fence, pImageIndex);
 }
@@ -225,7 +283,13 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_AcquireNextImageKHR(
 VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_QueuePresentKHR(
     VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
   scoped_lock l(global_lock);
-  pShaderGuts->QueuePresentKHR();
+
+  if (enable) {
+    pShaderGuts->LockVulkan(
+        impl::ShaderGuts::CheckpointFunction::vkQueuePresentKHR);
+    pShaderGuts->QueuePresentKHR();
+  }
+
   return device_dispatch[GetKey(queue)].QueuePresentKHR(queue, pPresentInfo);
 }
 

@@ -36,3 +36,39 @@ export VK_SHADER_GUTS_LOAD_HASH=3077582152445e6cddc7a384774b97486e1bc718
 
 vkcube
 ```
+
+## GUI EXPERIMENTAL CHAPTER
+
+Very recomended for apps launched via Wine.
+`VK_SHADER_GUTS_TARGET_APPNAME=<name>`
+
+`VK_SHADER_GUTS_GUI_ENABLE=1|true`
+
+If `1` or `true` is used, the default value is `vkAcquireNextImageKHR`
+`VK_SHADER_GUTS_GUI_PAUSE=1|true|{function:name}`
+
+Possible range values for the function option:
+```
+vkCreateInstance
+vkCreateDevice
+vkCreateGraphicsPipelines
+vkCreateComputePipelines
+vkCmdBindPipeline
+vkAcquireNextImageKHR
+vkQueuePresentKHR
+```
+
+Example:
+
+```
+VK_SHADER_GUTS_ENABLE=1 \
+VK_SHADER_GUTS_GUI_ENABLE=1 \
+VK_SHADER_GUTS_TARGET_APPNAME=renderdoccmd.exe \
+VK_SHADER_GUTS_GUI_PAUSE=function:vkCmdBindPipeline \
+vkcube
+```
+
+
+TODO:
+pipelines window not workin with VkCMD functions.
+

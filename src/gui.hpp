@@ -5,10 +5,14 @@
 #include "util.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
+#include <format>
 #include <imgui.h>
 #include <ranges>
+#include <stop_token>
 #include <string_view>
+#include <thread>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -38,41 +42,123 @@ public:
     enum class PipelineTabs { all, lastFrame, edited };
 
     PipelineTabs currentPipelineTab;
+    ShaderGuts::CheckpointType checkpointType;
+    ShaderGuts::CheckpointFunction checkpointFunction;
     bool play;
     uint32_t selectedRow;
   };
 
-  Gui(ShaderGuts &guts)
+  Gui(ShaderGuts &guts, const std::string &appname)
       : enable(true), context(nullptr), window(nullptr), guts(guts),
         pipeLibrary(guts.GetPipeLineLibrary()) {
-
     bool pauseOnStart = false;
-    util::envContainsTrue("VK_SHADER_GUTS_GUI", enable);
-    util::envContainsTrue("VK_SHADER_GUTS_GUI_PAUSE_ON_START", pauseOnStart);
+    util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
+    util::envContainsTrueOrPair(
+        "VK_SHADER_GUTS_GUI_PAUSE", pauseOnStart,
+        [&](std::string l, std::string r) {
+          if (l.contains("function")) {
+            try {
+              static const std::map<std::string_view,
+                                    ShaderGuts::CheckpointFunction>
+                  functionStringToType{
+                      {"vkCreateInstance",
+                       ShaderGuts::CheckpointFunction::vkCreateInstance},
+                      {"vkCreateDevice",
+                       ShaderGuts::CheckpointFunction::vkCreateDevice},
+                      {"vkCreateGraphicsPipelines",
+                       ShaderGuts::CheckpointFunction::
+                           vkCreateGraphicsPipelines},
+                      {"vkCreateComputePipelines",
+                       ShaderGuts::CheckpointFunction::
+                           vkCreateComputePipelines},
+                      {
+                          "vkCmdBindPipeline",
+                          ShaderGuts::CheckpointFunction::vkCmdBindPipeline,
+                      },
+                      {
+                          "vkAcquireNextImageKHR",
+                          ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR,
+                      },
+                      {
+                          "vkQueuePresentKHR",
+                          ShaderGuts::CheckpointFunction::vkQueuePresentKHR,
+                      },
+                  };
+
+              auto funcType = functionStringToType.at(r);
+
+              // TODO: move that state completely into GUTS.
+              state.checkpointType = ShaderGuts::CheckpointType::Function;
+              state.checkpointFunction = funcType;
+              state.play = false;
+              guts.Execute({cmd_t::playback, state.play});
+              guts.Execute({cmd_t::checkpointFunction, funcType});
+              guts.Execute({cmd_t::checkpointType,
+                            ShaderGuts::CheckpointType::Function});
+
+            } catch (std::exception &e) {
+              std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n ";
+            }
+          }
+        });
 
     if (!enable)
       return;
 
-    InitWindow();
+    InitWindow(appname);
     PrepareSaveFile();
     InitImgui();
     glfwMakeContextCurrent(nullptr);
-
-    state.play = !pauseOnStart;
-    guts.SetPlayback(state.play);
+    // FIXME: set checkpoint type
+    if (pauseOnStart) {
+      state.play = !pauseOnStart;
+      state.checkpointFunction =
+          ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR;
+      guts.Execute({cmd_t::checkpointFunction, state.checkpointFunction});
+      guts.Execute({cmd_t::playback, state.play});
+    }
   }
+
+  ~Gui() {
+    if (!saveConfigPath.empty())
+      ImGui::SaveIniSettingsToDisk(saveConfigPath.c_str());
+
+    glfwMakeContextCurrent(nullptr);
+    glfwTerminate();
+  }
+
+  Gui(const Gui &) = delete;
+  Gui &operator=(const Gui &) = delete;
+
+  Gui(Gui &&) = default;
+  // Gui &&operator=(Gui &&) = default;
+  /*
+  Gui(const Gui &&other) : guts(other.guts), pipeLibrary(other.pipeLibrary) {
+    glfwMakeContextCurrent(nullptr);
+
+    window = other.window;
+    context = other.context;
+    winSize = other.winSize;
+    allPipelines = std::move(other.allPipelines);
+    lastFramePipelines = std::move(other.lastFramePipelines);
+    editedPipelines = std::move(other.editedPipelines);
+  }
+    */
 
   auto DrawPlaybackMenu() -> void;
   auto DrawPipilinesMenu() -> void;
   auto DrawPipelines(const std::ranges::input_range auto &pipelines) -> void;
 
-  auto Draw() -> void {
+  auto Launch() -> void { drawThread = std::jthread(&Gui::Draw, this); }
+
+private:
+  auto Draw(std::stop_token st) -> void {
     if (!enable)
       return;
 
     glfwMakeContextCurrent(window);
 
-    while (enable && !glfwWindowShouldClose(window)) {
+    while (!st.stop_requested() && enable && !glfwWindowShouldClose(window)) {
       glClear(gl::GL_COLOR_BUFFER_BIT);
       glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -96,7 +182,6 @@ public:
     glfwTerminate();
   }
 
-private:
   auto PrepareSaveFile() -> void {
     const fs::path homeFolder = std::getenv("HOME");
     const fs::path configFolder = homeFolder / ".config" / gutsFolder;
@@ -112,14 +197,20 @@ private:
     saveConfigPath = configFolder / saveFile;
   }
 
-  auto InitWindow() -> void {
+  auto InitWindow(const std::string &appname) -> void {
     glfwInit();
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
 
-    window = glfwCreateWindow(800, 600, "VkShaderGUTS", nullptr, nullptr);
+    std::array<char, 128> title;
+
+    std::format_to(title.begin(), "{}",
+                   appname.empty() ? "VkShaderGUTS"
+                                   : ("VkShaderGUTS [" + appname + "]"));
+
+    window = glfwCreateWindow(800, 600, title.data(), nullptr, nullptr);
 
     if (!window) {
       std::clog << "[VK_SHADER_GUTS][GUI][err]: Failed to create GLFW window\n";
@@ -150,7 +241,6 @@ private:
     }
 
     ImGui::StyleColorsDark();
-
     auto res1 = ImGui_ImplGlfw_InitForOpenGL(window, true);
     auto res2 = ImGui_ImplOpenGL3_Init(glsl_version);
 
@@ -174,5 +264,6 @@ private:
   std::vector<PipelineLibrary::Pipeline> allPipelines;
   std::vector<PipelineLibrary::Pipeline> lastFramePipelines;
   std::vector<PipelineLibrary::Pipeline> editedPipelines;
+  std::jthread drawThread;
 };
 }; // namespace impl

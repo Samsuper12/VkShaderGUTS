@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -55,12 +56,48 @@ auto envContains(std::string_view var, std::map<std::string_view, T> matches,
   return false;
 }
 
+inline auto StringContainsTrue(std::string_view str) -> bool {
+  return (str.contains("1") || str.contains("true") || str.contains("True") ||
+          str.contains("TRUE"));
+}
+
 inline auto envContainsTrue(std::string_view var, bool &setOnMatch) -> void {
   auto env = util::getEnv(var);
 
-  setOnMatch =
-      env && (env.value().contains("1") || env.value().contains("true") ||
-              env.value().contains("True") || env.value().contains("TRUE"));
+  setOnMatch = env && StringContainsTrue(env.value());
+}
+
+inline auto envContainsTrueOrPair(
+    std::string_view var, bool &onBoolMatch,
+    const std::function<void(std::string, std::string)> &onStringMatch)
+    -> void {
+  auto env = util::getEnv(var);
+
+  if (!env.has_value())
+    return;
+
+  if (StringContainsTrue(env.value()))
+    onBoolMatch = true;
+
+  if (env.value().size() < 3 || env.value().find(':') == std::string::npos)
+    return;
+
+  auto ret = env.value();
+  onStringMatch(ret.substr(0, ret.find(':')), ret.substr(ret.find(':') + 1));
+}
+
+inline auto
+envContainsPair(std::string_view var,
+                const std::function<void(std::string, std::string)> &str)
+    -> void {
+  auto env = util::getEnv(var);
+
+  if (!env.has_value() || env.value().size() < 3 ||
+      env.value().find(':') == std::string::npos)
+    return;
+
+  auto ret = env.value();
+  str(ret.substr(0, ret.find(':')), ret.substr(ret.find(':') + 1));
 }
 
 inline auto envContainsString(std::string_view var, std::string &str) -> bool {
