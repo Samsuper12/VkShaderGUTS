@@ -49,9 +49,11 @@ public:
     uint64_t frameCount;
   };
 
-  ShaderGuts()
-      : dumpEnable(false), loadEnable(false), loadLang(ShaderLanguage::spirv) {
+  ShaderGuts(std::string &appname)
+      : dumpEnable(false), loadEnable(false), loadLang(ShaderLanguage::spirv),
+        appname(appname) {
     namespace fs = std::filesystem;
+    playback.play = true;
 
     bool dump = util::envContainsString("VK_SHADER_GUTS_DUMP_PATH", dumpPath);
     util::envContains<ShaderLanguage>("VK_SHADER_GUTS_DUMP_LANG",
@@ -62,13 +64,34 @@ public:
     util::envContains<ShaderLanguage>("VK_SHADER_GUTS_LOAD_LANG",
                                       stringToSourceType, loadLang);
 
+    bool pauseFrames = false;
+    util::envContainsTrueOrPair(
+        "VK_SHADER_GUTS_GUI_PAUSE", pauseFrames,
+        [&](std::string l, std::string r) {
+          if (l.contains("function")) {
+            try {
+              auto funcType = functionStringToType.at(r);
+
+              playback.checkpointType = ShaderGuts::CheckpointType::Function;
+              playback.checkpointFunction = funcType;
+              playback.play = false;
+            } catch (std::exception &e) {
+              std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n ";
+            }
+          }
+        });
+
     if (dump)
       dumpEnable = fs::exists(dumpPath) ? true : fs::create_directory(dumpPath);
 
     if (load && hash)
       loadEnable = hash && fs::exists(loadPath);
 
-    playback.play = true;
+    if (pauseFrames) {
+      playback.play = !pauseFrames;
+      playback.checkpointFunction = CheckpointFunction::vkCreateInstance;
+      playback.checkpointType = CheckpointType::Function;
+    }
 
     PrintLogs();
   }
@@ -347,6 +370,7 @@ private:
   std::string dumpPath;
   std::string loadPath;
   std::string loadHash;
+  std::string appname;
 
   ShaderLanguage dumpLang;
   ShaderLanguage loadLang;
@@ -375,6 +399,29 @@ private:
 
   std::map<std::string_view, ShaderLanguage> stringToSourceType{
       {"spirv", ShaderLanguage::spirv}, {"glsl", ShaderLanguage::glsl}};
+
+  const std::map<std::string_view, ShaderGuts::CheckpointFunction>
+      functionStringToType{
+          {"vkCreateInstance",
+           ShaderGuts::CheckpointFunction::vkCreateInstance},
+          {"vkCreateDevice", ShaderGuts::CheckpointFunction::vkCreateDevice},
+          {"vkCreateGraphicsPipelines",
+           ShaderGuts::CheckpointFunction::vkCreateGraphicsPipelines},
+          {"vkCreateComputePipelines",
+           ShaderGuts::CheckpointFunction::vkCreateComputePipelines},
+          {
+              "vkCmdBindPipeline",
+              ShaderGuts::CheckpointFunction::vkCmdBindPipeline,
+          },
+          {
+              "vkAcquireNextImageKHR",
+              ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR,
+          },
+          {
+              "vkQueuePresentKHR",
+              ShaderGuts::CheckpointFunction::vkQueuePresentKHR,
+          },
+      };
 
   Playback playback{};
   PipelineLibrary pipeLibrary;

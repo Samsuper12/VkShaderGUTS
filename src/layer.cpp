@@ -54,7 +54,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
       enable = true;
 
     if (enable) {
-      pShaderGuts = std::make_unique<impl::ShaderGuts>();
+      pShaderGuts = std::make_unique<impl::ShaderGuts>(targetName);
       pShaderGuts->LockVulkan(
           impl::ShaderGuts::CheckpointFunction::vkCreateInstance);
     }

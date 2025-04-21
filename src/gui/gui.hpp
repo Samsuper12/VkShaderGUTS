@@ -45,61 +45,11 @@ public:
     uint32_t selectedRow;
   };
 
-  Gui() :context(nullptr), window(nullptr) {
+  Gui() : context(nullptr), window(nullptr) {
     state.play = true;
     bool pauseOnStart = false;
     // FIXME: move this to guts_layer
-    //util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
-    util::envContainsTrueOrPair(
-        "VK_SHADER_GUTS_GUI_PAUSE", pauseOnStart,
-        [&](std::string l, std::string r) {
-          if (l.contains("function")) {
-            try {
-              static const std::map<std::string_view,
-                                    ShaderGuts::CheckpointFunction>
-                  functionStringToType{
-                      {"vkCreateInstance",
-                       ShaderGuts::CheckpointFunction::vkCreateInstance},
-                      {"vkCreateDevice",
-                       ShaderGuts::CheckpointFunction::vkCreateDevice},
-                      {"vkCreateGraphicsPipelines",
-                       ShaderGuts::CheckpointFunction::
-                           vkCreateGraphicsPipelines},
-                      {"vkCreateComputePipelines",
-                       ShaderGuts::CheckpointFunction::
-                           vkCreateComputePipelines},
-                      {
-                          "vkCmdBindPipeline",
-                          ShaderGuts::CheckpointFunction::vkCmdBindPipeline,
-                      },
-                      {
-                          "vkAcquireNextImageKHR",
-                          ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR,
-                      },
-                      {
-                          "vkQueuePresentKHR",
-                          ShaderGuts::CheckpointFunction::vkQueuePresentKHR,
-                      },
-                  };
-
-              auto funcType = functionStringToType.at(r);
-
-              // TODO: move that state completely into GUTS.
-              state.checkpointType = ShaderGuts::CheckpointType::Function;
-              state.checkpointFunction = funcType;
-              state.play = false;
-              // FIXME:
-              // guts.Execute({cmd_t::playback, state.play});
-              // guts.Execute({cmd_t::checkpointFunction, funcType});
-              // guts.Execute({cmd_t::checkpointType,
-              //  ShaderGuts::CheckpointType::Function});
-
-            } catch (std::exception &e) {
-              std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n ";
-            }
-          }
-        });
-
+    // util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
     // FIXME
     InitWindow("FIXME");
     InitImgui();

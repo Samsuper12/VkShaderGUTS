@@ -44,7 +44,7 @@ Very recomended for apps launched via Wine.
 
 `VK_SHADER_GUTS_GUI_ENABLE=1|true`
 
-If `1` or `true` is used, the default value is `vkAcquireNextImageKHR`
+If `1` or `true` is used, the default value is `vkCreateInstance`
 `VK_SHADER_GUTS_GUI_PAUSE=1|true|{function:name}`
 
 Possible range values for the function option:
