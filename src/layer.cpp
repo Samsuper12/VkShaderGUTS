@@ -1,5 +1,4 @@
 #include "layer.hpp"
-#include "gui.hpp"
 #include "guts.hpp"
 #include "util.hpp"
 
@@ -7,12 +6,10 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <thread>
 
 using scoped_lock = std::lock_guard<std::mutex>;
 
 std::unique_ptr<impl::ShaderGuts> pShaderGuts;
-std::unique_ptr<impl::Gui> pGui;
 std::mutex global_lock;
 static bool enable = false;
 
@@ -58,10 +55,6 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL ShaderGuts_CreateInstance(
 
     if (enable) {
       pShaderGuts = std::make_unique<impl::ShaderGuts>();
-
-      pGui = std::make_unique<impl::Gui>(*pShaderGuts, targetName);
-
-      pGui->Launch();
       pShaderGuts->LockVulkan(
           impl::ShaderGuts::CheckpointFunction::vkCreateInstance);
     }
@@ -98,7 +91,6 @@ VK_LAYER_EXPORT void VKAPI_CALL ShaderGuts_DestroyInstance(
   scoped_lock l(global_lock);
   instance_dispatch.erase(GetKey(instance));
   if (enable) {
-    pGui.reset();
     pShaderGuts.reset();
   }
 }

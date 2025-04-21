@@ -198,12 +198,12 @@ auto Gui::DrawPipilinesMenu() -> void {
   ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
 
   ImGui::Begin("Pipelines");
-
-  if (pipeLibrary.ReadyToPull()) {
-    allPipelines = pipeLibrary.GetAllPipelines();
-    lastFramePipelines = pipeLibrary.GetLastFramePipelines();
-  }
-
+  /* FIXME
+    if (pipeLibrary.ReadyToPull()) {
+      allPipelines = pipeLibrary.GetAllPipelines();
+      lastFramePipelines = pipeLibrary.GetLastFramePipelines();
+    }
+  */
   { // list
     ImGui::BeginChild("ChildL", ImVec2(350, ImGui::GetContentRegionAvail().y),
                       ImGuiChildFlags_Borders);

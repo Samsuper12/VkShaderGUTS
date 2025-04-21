@@ -28,27 +28,23 @@ else() # Linux
     set(LAYER_INSTALL_DIR "/etc/vulkan/implicit_layer.d")
 endif()
 
-add_library(${CMAKE_PROJECT_NAME} SHARED)
 
-target_include_directories(${CMAKE_PROJECT_NAME}
+# Layer
+add_library(guts_layer SHARED)
+
+target_include_directories(guts_layer
 PRIVATE
 	src/
 )
 
-target_sources(${CMAKE_PROJECT_NAME}
+target_sources(guts_layer
 PUBLIC 
 	src/layer.cpp
 	src/sha1.c
 	src/sha1_util.cpp
-	src/imgui/imgui_impl_glfw.cpp
-	src/imgui/imgui_impl_opengl3.cpp
-
-	src/gui_elements/PipelinesMenu.cpp
-	src/gui_elements/PlaybackMenu.cpp
-
 )
 
-target_link_libraries(${CMAKE_PROJECT_NAME}
+target_link_libraries(guts_layer
 PRIVATE
     Vulkan::Headers
 
@@ -61,16 +57,9 @@ PRIVATE
 	spirv-cross-core
 	spirv-cross-glsl
 	spirv-cross-reflect
-
-	glbinding::glbinding
-	glbinding::glbinding-aux
-
-	glfw
-
-	imgui::imgui
 )
 
-set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+set_target_properties(guts_layer PROPERTIES
     OUTPUT_NAME "${LAYER_JSON}"
 	CXX_STANDARD 23
 	CXX_EXTENSIONS YES
@@ -80,5 +69,47 @@ set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
 configure_file(${CMAKE_SOURCE_DIR}/${LAYER_JSON}.temp.json ${CMAKE_BINARY_DIR}/${LAYER_JSON}.json @ONLY)
 
 install(FILES ${CMAKE_BINARY_DIR}/${LAYER_JSON}.json DESTINATION ${LAYER_INSTALL_DIR})
-install(TARGETS ${CMAKE_PROJECT_NAME}
+install(TARGETS guts_layer
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+
+# Gui
+
+add_executable(guts_gui)
+
+target_sources(guts_gui PRIVATE 
+src/gui/gui.cpp
+src/gui/backend/imgui_impl_glfw.cpp
+src/gui/backend/imgui_impl_opengl3.cpp
+
+src/gui/menu/PipelinesMenu.cpp
+src/gui/menu/PlaybackMenu.cpp
+)
+
+target_link_libraries(guts_gui PRIVATE
+Vulkan::Headers
+
+glbinding::glbinding
+glbinding::glbinding-aux
+
+glfw
+
+imgui::imgui
+)
+
+target_include_directories(guts_gui
+PRIVATE
+	src/
+	src/gui/
+	src/gui/menu
+)
+
+set_target_properties(guts_gui PROPERTIES
+    OUTPUT_NAME "VkShaderGUTS_GUI"
+	CXX_STANDARD 23
+	CXX_EXTENSIONS YES
+	#MACOSX_BUNDLE YES
+)
+
+install(TARGETS guts_layer
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

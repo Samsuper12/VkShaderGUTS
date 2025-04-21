@@ -1,7 +1,6 @@
 #pragma once
 #include "PipelineLibrary.hpp"
 #include "guts.hpp"
-#include "layer.hpp"
 #include "util.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -10,9 +9,7 @@
 #include <format>
 #include <imgui.h>
 #include <ranges>
-#include <stop_token>
 #include <string_view>
-#include <thread>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -23,10 +20,10 @@
 #include <glbinding-aux/debug.h>
 #include <glbinding/glbinding.h>
 
-#include "imgui/imgui_impl_glfw.h"
-#include "imgui/imgui_impl_opengl3.h"
+#include "gui/backend/imgui_impl_glfw.h"
+#include "gui/backend/imgui_impl_opengl3.h"
 
-#include "imgui/imgui_util.hpp"
+#include "gui/imgui_util.hpp"
 
 namespace impl {
 using namespace gl;
@@ -48,12 +45,11 @@ public:
     uint32_t selectedRow;
   };
 
-  Gui(ShaderGuts &guts, const std::string &appname)
-      : enable(true), context(nullptr), window(nullptr), guts(guts),
-        pipeLibrary(guts.GetPipeLineLibrary()) {
+  Gui() :context(nullptr), window(nullptr) {
     state.play = true;
     bool pauseOnStart = false;
-    util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
+    // FIXME: move this to guts_layer
+    //util::envContainsTrue("VK_SHADER_GUTS_GUI_ENABLE", enable);
     util::envContainsTrueOrPair(
         "VK_SHADER_GUTS_GUI_PAUSE", pauseOnStart,
         [&](std::string l, std::string r) {
@@ -92,10 +88,11 @@ public:
               state.checkpointType = ShaderGuts::CheckpointType::Function;
               state.checkpointFunction = funcType;
               state.play = false;
-              guts.Execute({cmd_t::playback, state.play});
-              guts.Execute({cmd_t::checkpointFunction, funcType});
-              guts.Execute({cmd_t::checkpointType,
-                            ShaderGuts::CheckpointType::Function});
+              // FIXME:
+              // guts.Execute({cmd_t::playback, state.play});
+              // guts.Execute({cmd_t::checkpointFunction, funcType});
+              // guts.Execute({cmd_t::checkpointType,
+              //  ShaderGuts::CheckpointType::Function});
 
             } catch (std::exception &e) {
               std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n ";
@@ -103,22 +100,20 @@ public:
           }
         });
 
-    if (!enable)
-      return;
-
-    InitWindow(appname);
+    // FIXME
+    InitWindow("FIXME");
     InitImgui();
-    glfwMakeContextCurrent(nullptr);
     if (pauseOnStart) {
       state.play = !pauseOnStart;
       state.checkpointFunction =
           ShaderGuts::CheckpointFunction::vkAcquireNextImageKHR;
-      guts.Execute({cmd_t::checkpointFunction, state.checkpointFunction});
-      guts.Execute({cmd_t::playback, state.play});
+      // FIXME
+      // guts.Execute({cmd_t::checkpointFunction, state.checkpointFunction});
+      // guts.Execute({cmd_t::playback, state.play});
     }
   }
 
-  ~Gui() { drawThread.request_stop(); }
+  ~Gui() {}
   Gui(const Gui &) = delete;
   Gui &operator=(const Gui &) = delete;
   Gui(Gui &&) = default;
@@ -127,16 +122,11 @@ public:
   auto DrawPipilinesMenu() -> void;
   auto DrawPipelines(const std::ranges::input_range auto &pipelines) -> void;
 
-  auto Launch() -> void { drawThread = std::jthread(&Gui::Draw, this); }
+  auto Launch() -> void { Draw(); }
 
 private:
-  auto Draw(std::stop_token st) -> void {
-    if (!enable)
-      return;
-
-    glfwMakeContextCurrent(window);
-
-    while (!st.stop_requested() && enable && !glfwWindowShouldClose(window)) {
+  auto Draw() -> void {
+    while (!glfwWindowShouldClose(window)) {
       glClear(gl::GL_COLOR_BUFFER_BIT);
       glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -192,7 +182,6 @@ private:
 
     if (!window) {
       std::clog << "[VK_SHADER_GUTS][GUI][err]: Failed to create GLFW window\n";
-      enable = false;
     }
 
     glfwMakeContextCurrent(window);
@@ -225,12 +214,11 @@ private:
     auto res2 = ImGui_ImplOpenGL3_Init(glsl_version);
 
     if (!(res1 || res2))
-      enable = false;
+      std::clog
+          << "[VK_SHADER_GUTS][GUI][err]: Failed to init ImGui context!\n";
   }
 
 private:
-  bool enable;
-
   ImGuiContext *context;
   ImVec2 winSize;
 
@@ -238,12 +226,8 @@ private:
   GuiState state{};
 
   fs::path saveConfigPath;
-  ShaderGuts &guts;
-  PipelineLibrary &pipeLibrary;
-
   std::vector<PipelineLibrary::Pipeline> allPipelines;
   std::vector<PipelineLibrary::Pipeline> lastFramePipelines;
   std::vector<PipelineLibrary::Pipeline> editedPipelines;
-  std::jthread drawThread;
 };
 }; // namespace impl

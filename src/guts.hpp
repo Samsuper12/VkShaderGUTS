@@ -1,16 +1,12 @@
 #pragma once
-#include "defines.hpp"
 #include "glslangShaders.hpp"
 #include "util.hpp"
 #include <any>
 #include <chrono>
 #include <cstdint>
-#include <optional>
-#include <shared_mutex>
 #include <string_view>
 #include <sys/types.h>
 #include <thread>
-#include <utility>
 
 #include "PipelineLibrary.hpp"
 

@@ -1,6 +1,6 @@
 #include "gui.hpp"
 #include "guts.hpp"
-#include "imgui/imgui_util.hpp"
+#include "imgui_util.hpp"
 #include <cstdint>
 #include <imgui.h>
 #include <string_view>
@@ -75,7 +75,8 @@ auto Gui::DrawPlaybackMenu() -> void {
         const bool isSelected = (item.first == state.checkpointType);
         if (ImGui::Selectable(item.second.data(), isSelected)) {
           state.checkpointType = item.first;
-          guts.Execute({cmd_t::checkpointType, state.checkpointType});
+          // FIXME:
+          // guts.Execute({cmd_t::checkpointType, state.checkpointType});
         }
 
         if (isSelected)
@@ -103,7 +104,9 @@ auto Gui::DrawPlaybackMenu() -> void {
 
           if (ImGui::Selectable(item.second.data(), isSelected)) {
             state.checkpointFunction = item.first;
-            guts.Execute({cmd_t::checkpointFunction, state.checkpointFunction});
+            // FIXME:
+            // guts.Execute({cmd_t::checkpointFunction,
+            // state.checkpointFunction});
           }
 
           if (isSelected)
@@ -116,23 +119,26 @@ auto Gui::DrawPlaybackMenu() -> void {
     ImGui::TreePop();
   }
 
-  ImGui::Text("Current frame: %ld", guts.GetFrameCount());
+  // FIXME:guts.GetFrameCount()
+  ImGui::Text("Current frame: %ld", 0);
 
   if (ImGui::Button(state.play ? "Pause" : "Play")) {
     state.play = !state.play;
 
-    guts.Execute({cmd_t::playback, state.play});
+    // guts.Execute({cmd_t::playback, state.play});
   }
 
   ImGui::SameLine();
 
-  if (ImGui::ArrowButton("button_frameStep", ImGuiDir::ImGuiDir_Right))
-    guts.Execute({cmd_t::playstep, 1});
+  if (ImGui::ArrowButton("button_frameStep", ImGuiDir::ImGuiDir_Right)) {
+  }
+  //  guts.Execute({cmd_t::playstep, 1});
 
   ImGui::SameLine();
 
-  if (ImGui::Button(">>"))
-    guts.Execute({cmd_t::playstep, 10});
+  if (ImGui::Button(">>")) {
+  }
+  // guts.Execute({cmd_t::playstep, 10});
 
   ImGui::End();
 }
