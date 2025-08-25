@@ -12,6 +12,8 @@ find_package(glslang CONFIG)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(glbinding CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
+
 
 find_package(spirv_cross_c_shared)
 if (spirv_cross_c_shared_FOUND)
@@ -57,6 +59,8 @@ PRIVATE
 	spirv-cross-core
 	spirv-cross-glsl
 	spirv-cross-reflect
+
+	Boost::system
 )
 
 set_target_properties(guts_layer PROPERTIES
@@ -65,6 +69,9 @@ set_target_properties(guts_layer PROPERTIES
 	CXX_EXTENSIONS YES
 	CMAKE_CXX_SCAN_FOR_MODULES ON
 )
+
+target_compile_definitions(guts_layer PRIVATE BOOST_ASIO_HAS_CO_AWAIT)
+
 
 configure_file(${CMAKE_SOURCE_DIR}/${LAYER_JSON}.temp.json ${CMAKE_BINARY_DIR}/${LAYER_JSON}.json @ONLY)
 
@@ -95,6 +102,8 @@ glbinding::glbinding-aux
 glfw
 
 imgui::imgui
+
+Boost::system
 )
 
 target_include_directories(guts_gui
@@ -110,6 +119,9 @@ set_target_properties(guts_gui PROPERTIES
 	CXX_EXTENSIONS YES
 	#MACOSX_BUNDLE YES
 )
+
+target_compile_definitions(guts_gui PRIVATE BOOST_ASIO_HAS_CO_AWAIT)
+
 
 install(TARGETS guts_layer
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -2,13 +2,31 @@
 #include "glslangShaders.hpp"
 #include "util.hpp"
 #include <any>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/local/stream_protocol.hpp>
+#include <boost/asio/signal_set.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/write.hpp>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
+#include <exception>
+#include <filesystem>
+#include <stop_token>
 #include <string_view>
 #include <sys/types.h>
 #include <thread>
 
 #include "PipelineLibrary.hpp"
+
+const std::filesystem::path socketDirectory = "/tmp/VkShaderGuts";
+
+namespace asio = boost::asio;
 
 namespace impl {
 
@@ -66,7 +84,7 @@ public:
 
     bool pauseFrames = false;
     util::envContainsTrueOrPair(
-        "VK_SHADER_GUTS_GUI_PAUSE", pauseFrames,
+        "VK_SHADER_GUTS_GUI_ENABLE", pauseFrames,
         [&](std::string l, std::string r) {
           if (l.contains("function")) {
             try {
@@ -76,7 +94,8 @@ public:
               playback.checkpointFunction = funcType;
               playback.play = false;
             } catch (std::exception &e) {
-              std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n ";
+              std::clog << "[VK_SHADER_GUTS][GUI][ERR]: bad argument\n "
+                        << e.what();
             }
           }
         });
@@ -93,7 +112,57 @@ public:
       playback.checkpointType = CheckpointType::Function;
     }
 
+    if (!playback.play)
+      ioThread = std::jthread(&ShaderGuts::IoThread, this);
+
     PrintLogs();
+  }
+
+  asio::awaitable<void> reader(asio::local::stream_protocol::socket socket,
+                               std::stop_token &st) {
+    try {
+      std::array<char, 1024> data;
+
+      for (; !st.stop_requested();) {
+        size_t n = co_await socket.async_read_some(asio::buffer(data),
+                                                   asio::use_awaitable);
+        std::clog << "Socket data: " << data.data() << "\n";
+        // parse the data
+      }
+
+    } catch (std::exception &e) {
+      std::clog << "[VK_SHADER_GUTS][LAYER][ERR]: " << e.what() << "\n";
+    }
+  }
+
+  asio::awaitable<void> listener(std::stop_token &st) {
+    using boost::asio::local::stream_protocol;
+    auto executor = co_await asio::this_coro::executor;
+    // FIXME:
+    stream_protocol::endpoint ep(socketDirectory / "Socket0");
+    stream_protocol::acceptor acceptor(executor, ep);
+
+    for (; !st.stop_requested();) {
+      stream_protocol::socket socket =
+          co_await acceptor.async_accept(asio::use_awaitable);
+      co_spawn(executor, reader(std::move(socket), st), asio::detached);
+    }
+  }
+
+  auto IoThread(std::stop_token st) -> void {
+
+    try {
+
+      asio::io_context ioContext(1);
+      asio::signal_set signals(ioContext, SIGINT, SIGTERM);
+      signals.async_wait([&](auto, auto) { ioContext.stop(); });
+
+      co_spawn(ioContext, listener(st), asio::detached);
+
+      ioContext.run();
+    } catch (std::exception &e) {
+      std::clog << "[VK_SHADER_GUTS][LAYER][ERR]: " << e.what() << "\n";
+    }
   }
 
   auto LockVulkan(CheckpointFunction f) -> void {
@@ -374,6 +443,8 @@ private:
 
   ShaderLanguage dumpLang;
   ShaderLanguage loadLang;
+
+  std::jthread ioThread;
 
   // Keep the shader until it loads up into the driver.
   std::vector<std::byte> currentShader;
